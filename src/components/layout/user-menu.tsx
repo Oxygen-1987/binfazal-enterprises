@@ -17,6 +17,9 @@ import {
   Check,
   Shield,
   Mail,
+  Phone,
+  Briefcase,
+  Calendar as CalendarIcon,
 } from "lucide-react";
 
 export function UserMenu() {
@@ -209,9 +212,16 @@ export function UserMenu() {
                   <p className="font-semibold truncate">
                     {userProfile.full_name}
                   </p>
-                  <p className="text-xs text-gray-500 truncate">
-                    {userProfile.email}
-                  </p>
+                  {userProfile.designation &&
+                  userProfile.role === "employee" ? (
+                    <p className="text-xs text-gray-600 dark:text-gray-400 truncate">
+                      {userProfile.designation}
+                    </p>
+                  ) : (
+                    <p className="text-xs text-gray-500 truncate">
+                      {userProfile.email}
+                    </p>
+                  )}
                   <span
                     className={`inline-flex items-center text-xs mt-1 px-2 py-0.5 rounded-full ${
                       userProfile.role === "owner"
@@ -347,6 +357,26 @@ export function UserMenu() {
                   </div>
                 </div>
               </div>
+
+              {/* Employee Details */}
+              {userProfile.role === "employee" && userProfile.designation && (
+                <div className="flex items-center space-x-3 text-sm">
+                  <Briefcase className="h-4 w-4 text-gray-400" />
+                  <div>
+                    <p className="text-xs text-gray-500">Designation</p>
+                    <p className="font-medium">{userProfile.designation}</p>
+                  </div>
+                </div>
+              )}
+              {userProfile.role === "employee" && userProfile.phone && (
+                <div className="flex items-center space-x-3 text-sm">
+                  <Phone className="h-4 w-4 text-gray-400" />
+                  <div>
+                    <p className="text-xs text-gray-500">Phone</p>
+                    <p className="font-medium">{userProfile.phone}</p>
+                  </div>
+                </div>
+              )}
 
               <div className="mt-6 pt-4 border-t border-gray-200 dark:border-gray-700">
                 <Button

@@ -12,6 +12,11 @@ interface UserProfile {
   full_name: string;
   role: "owner" | "employee";
   avatar_url: string | null;
+  phone: string | null;
+  designation: string | null;
+  joining_date: string | null;
+  cnic: string | null;
+  address: string | null;
 }
 
 interface AuthContextType {
@@ -67,9 +72,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const fetchUserProfile = async (userId: string) => {
     const { data, error } = await supabase
       .from("users")
-      .select("id, email, full_name, role, avatar_url")
+      .select(
+        "id, email, full_name, role, avatar_url, phone, designation, joining_date, cnic, address",
+      )
       .eq("id", userId)
-      .maybeSingle(); // Use maybeSingle instead of single
+      .maybeSingle();
 
     if (error) {
       console.error("Error fetching user profile:", error);
@@ -78,7 +85,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (data) {
       setUserProfile(data);
     } else {
-      // User record doesn't exist - create it from auth metadata
       const {
         data: { user },
       } = await supabase.auth.getUser();
@@ -92,6 +98,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             "User",
           role: "employee",
           avatar_url: null,
+          phone: null,
+          designation: null,
+          joining_date: null,
+          cnic: null,
+          address: null,
         });
       }
     }

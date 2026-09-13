@@ -44,6 +44,12 @@ interface UserRecord {
   full_name: string;
   role: "owner" | "employee";
   created_at: string;
+  avatar_url?: string | null;
+  phone?: string | null;
+  designation?: string | null;
+  joining_date?: string | null;
+  cnic?: string | null;
+  address?: string | null;
 }
 
 interface BusinessInfo {
@@ -77,7 +83,14 @@ export default function SettingsPage() {
     password: "",
     full_name: "",
     role: "employee",
+    // New employee detail fields
+    phone: "",
+    designation: "",
+    joining_date: "",
+    cnic: "",
+    address: "",
   });
+
   const [showFullscreen, setShowFullscreen] = useState(false);
   const [zoomLevel, setZoomLevel] = useState(1);
 
@@ -304,11 +317,19 @@ export default function SettingsPage() {
       if (authError) throw authError;
 
       if (authData.user) {
+        // Insert into users table with all details
         const { error: userError } = await supabase.from("users").insert({
           id: authData.user.id,
           email: newUser.email,
           full_name: newUser.full_name,
           role: newUser.role,
+          phone: newUser.role === "employee" ? newUser.phone || null : null,
+          designation:
+            newUser.role === "employee" ? newUser.designation || null : null,
+          joining_date:
+            newUser.role === "employee" ? newUser.joining_date || null : null,
+          cnic: newUser.role === "employee" ? newUser.cnic || null : null,
+          address: newUser.role === "employee" ? newUser.address || null : null,
         });
 
         if (userError) throw userError;
@@ -320,6 +341,11 @@ export default function SettingsPage() {
           password: "",
           full_name: "",
           role: "employee",
+          phone: "",
+          designation: "",
+          joining_date: "",
+          cnic: "",
+          address: "",
         });
       }
     } catch (error: any) {
@@ -866,71 +892,163 @@ export default function SettingsPage() {
                 className="bg-gray-50 dark:bg-gray-900 p-4 rounded-lg space-y-4"
               >
                 <h3 className="font-semibold">Add New User</h3>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="full_name">Full Name *</Label>
-                    <Input
-                      id="full_name"
-                      value={newUser.full_name}
-                      onChange={(e) =>
-                        setNewUser((prev) => ({
-                          ...prev,
-                          full_name: e.target.value,
-                        }))
-                      }
-                      required
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="email">Email *</Label>
-                    <Input
-                      id="email"
-                      type="email"
-                      value={newUser.email}
-                      onChange={(e) =>
-                        setNewUser((prev) => ({
-                          ...prev,
-                          email: e.target.value,
-                        }))
-                      }
-                      required
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="password">Password *</Label>
-                    <Input
-                      id="password"
-                      type="password"
-                      value={newUser.password}
-                      onChange={(e) =>
-                        setNewUser((prev) => ({
-                          ...prev,
-                          password: e.target.value,
-                        }))
-                      }
-                      required
-                      minLength={6}
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="role">Role</Label>
-                    <select
-                      id="role"
-                      value={newUser.role}
-                      onChange={(e) =>
-                        setNewUser((prev) => ({
-                          ...prev,
-                          role: e.target.value,
-                        }))
-                      }
-                      className="w-full rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 px-3 py-2 text-sm"
-                    >
-                      <option value="employee">Employee (Machine Man)</option>
-                      <option value="owner">Owner</option>
-                    </select>
+
+                {/* Account Credentials */}
+                <div className="space-y-3">
+                  <p className="text-xs font-semibold text-gray-500 uppercase">
+                    Account Credentials
+                  </p>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="full_name">Full Name *</Label>
+                      <Input
+                        id="full_name"
+                        value={newUser.full_name}
+                        onChange={(e) =>
+                          setNewUser((prev) => ({
+                            ...prev,
+                            full_name: e.target.value,
+                          }))
+                        }
+                        placeholder="Enter employee's full name"
+                        required
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="email">Email *</Label>
+                      <Input
+                        id="email"
+                        type="email"
+                        value={newUser.email}
+                        onChange={(e) =>
+                          setNewUser((prev) => ({
+                            ...prev,
+                            email: e.target.value,
+                          }))
+                        }
+                        placeholder="employee@example.com"
+                        required
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="password">Password *</Label>
+                      <Input
+                        id="password"
+                        type="password"
+                        value={newUser.password}
+                        onChange={(e) =>
+                          setNewUser((prev) => ({
+                            ...prev,
+                            password: e.target.value,
+                          }))
+                        }
+                        placeholder="Min 6 characters"
+                        required
+                        minLength={6}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="role">Role</Label>
+                      <select
+                        id="role"
+                        value={newUser.role}
+                        onChange={(e) =>
+                          setNewUser((prev) => ({
+                            ...prev,
+                            role: e.target.value,
+                          }))
+                        }
+                        className="w-full rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 px-3 py-2 text-sm"
+                      >
+                        <option value="employee">Employee (Machine Man)</option>
+                        <option value="owner">Owner</option>
+                      </select>
+                    </div>
                   </div>
                 </div>
-                <div className="flex space-x-3">
+
+                {/* Employee Details (only if role is employee) */}
+                {newUser.role === "employee" && (
+                  <div className="space-y-3 pt-4 border-t border-gray-200 dark:border-gray-700">
+                    <p className="text-xs font-semibold text-gray-500 uppercase">
+                      Employee Details
+                    </p>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <Label htmlFor="phone">Phone Number</Label>
+                        <Input
+                          id="phone"
+                          type="tel"
+                          value={newUser.phone}
+                          onChange={(e) =>
+                            setNewUser((prev) => ({
+                              ...prev,
+                              phone: e.target.value,
+                            }))
+                          }
+                          placeholder="0300-1234567"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="designation">Designation</Label>
+                        <Input
+                          id="designation"
+                          value={newUser.designation}
+                          onChange={(e) =>
+                            setNewUser((prev) => ({
+                              ...prev,
+                              designation: e.target.value,
+                            }))
+                          }
+                          placeholder="e.g., Machine Operator"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="joining_date">Joining Date</Label>
+                        <DatePicker
+                          value={newUser.joining_date}
+                          onChange={(date) =>
+                            setNewUser((prev) => ({
+                              ...prev,
+                              joining_date: date,
+                            }))
+                          }
+                          placeholder="DD/MM/YYYY"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="cnic">CNIC</Label>
+                        <Input
+                          id="cnic"
+                          value={newUser.cnic}
+                          onChange={(e) =>
+                            setNewUser((prev) => ({
+                              ...prev,
+                              cnic: e.target.value,
+                            }))
+                          }
+                          placeholder="00000-0000000-0"
+                        />
+                      </div>
+                      <div className="space-y-2 md:col-span-2">
+                        <Label htmlFor="address">Address</Label>
+                        <Input
+                          id="address"
+                          value={newUser.address}
+                          onChange={(e) =>
+                            setNewUser((prev) => ({
+                              ...prev,
+                              address: e.target.value,
+                            }))
+                          }
+                          placeholder="Enter address"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                <div className="flex space-x-3 pt-2">
                   <Button type="submit" disabled={saving}>
                     {saving ? "Adding..." : "Add User"}
                   </Button>
@@ -951,11 +1069,33 @@ export default function SettingsPage() {
                   key={userRecord.id}
                   className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-900 rounded-lg"
                 >
-                  <div>
-                    <p className="font-medium">{userRecord.full_name}</p>
-                    <p className="text-sm text-gray-500">{userRecord.email}</p>
+                  <div className="flex items-center space-x-3 flex-1 min-w-0">
+                    <div
+                      className={`w-10 h-10 rounded-full flex items-center justify-center text-white text-sm font-bold flex-shrink-0 ${
+                        userRecord.role === "owner"
+                          ? "bg-[#FF6B00]"
+                          : "bg-blue-500"
+                      }`}
+                    >
+                      {userRecord.full_name
+                        .split(" ")
+                        .map((n: string) => n[0])
+                        .join("")
+                        .toUpperCase()
+                        .slice(0, 2)}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="font-medium truncate">
+                        {userRecord.full_name}
+                      </p>
+                      <p className="text-xs text-gray-500 truncate">
+                        {userRecord.designation
+                          ? `${userRecord.designation} • ${userRecord.email}`
+                          : userRecord.email}
+                      </p>
+                    </div>
                   </div>
-                  <div className="flex items-center space-x-3">
+                  <div className="flex items-center space-x-3 flex-shrink-0">
                     <span
                       className={`text-xs px-2 py-1 rounded-full ${
                         userRecord.role === "owner"
