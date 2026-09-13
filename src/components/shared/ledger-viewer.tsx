@@ -7,7 +7,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Download, FileImage, Loader2, Share2 } from "lucide-react";
 import { formatCurrency, formatDate } from "@/lib/utils/format";
-import { shareFile } from "@/lib/utils/share";
+import { shareFile, saveFile, getSaveLocationMessage } from "@/lib/utils/share";
 
 interface LedgerEntry {
   id: string;
@@ -286,12 +286,40 @@ export function LedgerViewer({
 
       const imgData = canvas.toDataURL("image/png", 1.0);
       pdf.addImage(imgData, "PNG", offsetX, offsetY, finalWidth, finalHeight);
-      pdf.save(getFileName("pdf"));
+
+      const pdfBlob = pdf.output("blob");
+      const fileName = getFileName("pdf");
+
+      await saveFile(pdfBlob, fileName, "application/pdf");
+      alert(getSaveLocationMessage());
     } catch (error) {
       console.error("Error generating PDF:", error);
       alert("Error generating PDF. Please try again.");
     } finally {
       setDownloading(false);
+    }
+  };
+
+  // Replace handleDownloadPNG
+  const handleDownloadPNG = async () => {
+    setDownloadingPng(true);
+    try {
+      const canvas = await generateCanvas();
+
+      const blob = await new Promise<Blob | null>((resolve) => {
+        canvas.toBlob((b) => resolve(b), "image/png", 1.0);
+      });
+
+      if (!blob) throw new Error("Failed to create image");
+
+      const fileName = getFileName("png");
+      await saveFile(blob, fileName, "image/png");
+      alert(getSaveLocationMessage());
+    } catch (error) {
+      console.error("Error generating PNG:", error);
+      alert("Error generating PNG. Please try again.");
+    } finally {
+      setDownloadingPng(false);
     }
   };
 
@@ -357,28 +385,15 @@ export function LedgerViewer({
       const imgData = canvas.toDataURL("image/png", 1.0);
       pdf.addImage(imgData, "PNG", offsetX, offsetY, finalWidth, finalHeight);
 
-      // Get PDF as blob
       const pdfBlob = pdf.output("blob");
       const fileName = getFileName("pdf");
       const clientName =
         client?.company_name || `${client?.first_name} ${client?.last_name}`;
-
       const shareText = `Ledger statement for ${clientName} from ${
         businessInfo?.business_name || "BinFazal Enterprises"
       }`;
 
-      const shared = await shareFile(
-        pdfBlob,
-        fileName,
-        "Client Ledger",
-        shareText,
-      );
-
-      if (!shared) {
-        // Fallback already downloaded the file
-        // Only show message if share wasn't available at all
-        // (silent, since fallback = download)
-      }
+      await shareFile(pdfBlob, fileName, "Client Ledger", shareText);
     } catch (error) {
       console.error("Error sharing:", error);
       alert("Error sharing ledger. Please try again.");
