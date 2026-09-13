@@ -5,9 +5,19 @@ import { useEffect, useState, useRef } from "react";
 import { supabase } from "@/lib/supabase/client";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Download, FileImage, Loader2, Share2 } from "lucide-react";
+import {
+  Download,
+  FileImage,
+  Loader2,
+  Share2,
+  AlertCircle,
+} from "lucide-react";
 import { formatCurrency, formatDate } from "@/lib/utils/format";
 import { shareFile, saveFile, getSaveLocationMessage } from "@/lib/utils/share";
+import {
+  hasAllFilesPermission,
+  openAllFilesSettings,
+} from "@/lib/utils/permissions";
 
 interface LedgerEntry {
   id: string;
@@ -75,6 +85,15 @@ export function LedgerViewer({
   const [sharing, setSharing] = useState(false);
   const [statementPeriod, setStatementPeriod] = useState({ from: "", to: "" });
   const ledgerRef = useRef<HTMLDivElement>(null);
+  const [hasFilePermission, setHasFilePermission] = useState(true);
+
+  useEffect(() => {
+    const checkPermission = async () => {
+      const has = await hasAllFilesPermission();
+      setHasFilePermission(has);
+    };
+    checkPermission();
+  }, []);
 
   useEffect(() => {
     fetchBusinessInfo();
@@ -459,6 +478,32 @@ export function LedgerViewer({
           </span>
         </CardContent>
       </Card>
+
+      {!hasFilePermission && (
+        <Card className="bg-yellow-50 dark:bg-yellow-900/20 border-yellow-200 dark:border-yellow-800">
+          <CardContent className="p-4">
+            <div className="flex items-start space-x-3">
+              <AlertCircle className="h-5 w-5 text-yellow-600 flex-shrink-0 mt-0.5" />
+              <div className="flex-1">
+                <p className="font-semibold text-sm text-yellow-800 dark:text-yellow-200">
+                  File access permission required
+                </p>
+                <p className="text-xs text-yellow-700 dark:text-yellow-300 mt-1">
+                  To download and share files, please enable "All files access"
+                  for BinFazal.
+                </p>
+                <Button
+                  size="sm"
+                  className="mt-2 bg-yellow-600 hover:bg-yellow-700 text-white"
+                  onClick={openAllFilesSettings}
+                >
+                  Open Settings
+                </Button>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Action Buttons */}
       {showDownloadButtons && hasTemplate && (

@@ -26,30 +26,51 @@ export async function saveFile(
 ): Promise<void> {
   if (isNativeApp()) {
     const { Filesystem, Directory } = await import("@capacitor/filesystem");
-    const { Share } = await import("@capacitor/share");
     const base64Data = await blobToBase64(blob);
 
-    // Write to Cache (always allowed)
+    // Try Documents first (needs MANAGE_EXTERNAL_STORAGE)
+    try {
+      await Filesystem.writeFile({
+        path: fileName,
+        data: base64Data,
+        directory: Directory.Documents,
+        recursive: true,
+      });
+      console.log("✅ Saved to Documents:", fileName);
+      return;
+    } catch (e) {
+      console.log("Documents failed, trying Downloads via External:", e);
+    }
+
+    // Try ExternalStorage
+    try {
+      await Filesystem.writeFile({
+        path: fileName,
+        data: base64Data,
+        directory: Directory.ExternalStorage,
+        recursive: true,
+      });
+      console.log("✅ Saved to ExternalStorage:", fileName);
+      return;
+    } catch (e) {
+      console.log("ExternalStorage failed:", e);
+    }
+
+    // Fallback: Cache + share sheet
     const result = await Filesystem.writeFile({
       path: fileName,
       data: base64Data,
       directory: Directory.Cache,
       recursive: true,
     });
-
-    // Open share sheet so user can save/send
+    const { Share } = await import("@capacitor/share");
     await Share.share({
       title: fileName,
-      text:
-        mimeType === "application/pdf"
-          ? "Save or share your ledger PDF"
-          : "Save or share your ledger image",
       url: result.uri,
-      dialogTitle: "Save or Share File",
+      dialogTitle: "Save File",
     });
-    return;
   } else {
-    // Web: standard download
+    // Web download
     const url = window.URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
