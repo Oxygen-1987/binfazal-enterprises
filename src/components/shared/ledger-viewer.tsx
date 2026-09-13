@@ -331,10 +331,16 @@ export function LedgerViewer({
   const handleDownloadPDF = async () => {
     setDownloading(true);
     try {
+      const { requestStoragePermission } = await import("@/lib/utils/share");
+      await requestStoragePermission();
+
       const canvas = await generateCanvas();
       const pdfBlob = await generatePDFBlob(canvas);
       const fileName = getFileName("pdf");
+
+      console.log("PDF blob size:", pdfBlob.size);
       await saveFile(pdfBlob, fileName, "application/pdf");
+      alert(getSaveLocationMessage());
     } catch (error: any) {
       console.error("PDF Error:", error);
       alert(`Error: ${error.message || "Failed to generate PDF"}`);
@@ -346,16 +352,28 @@ export function LedgerViewer({
   const handleDownloadPNG = async () => {
     setDownloadingPng(true);
     try {
+      const { requestStoragePermission } = await import("@/lib/utils/share");
+      await requestStoragePermission();
+
       const canvas = await generateCanvas();
+
+      // Generate JPEG blob (better Android compatibility)
       const blob = await new Promise<Blob | null>((resolve) => {
-        canvas.toBlob((b) => resolve(b), "image/png", 1.0);
+        canvas.toBlob((b) => resolve(b), "image/jpeg", 0.95);
       });
-      if (!blob) throw new Error("Failed to create image");
-      const fileName = getFileName("png");
-      await saveFile(blob, fileName, "image/png");
+
+      if (!blob) {
+        throw new Error("Failed to create image");
+      }
+
+      console.log("JPEG blob size:", blob.size, "type:", blob.type);
+
+      const fileName = getFileName("jpg"); // Changed to .jpg
+      await saveFile(blob, fileName, "image/jpeg"); // Changed mime type
+      alert(getSaveLocationMessage());
     } catch (error: any) {
-      console.error("PNG Error:", error);
-      alert(`Error: ${error.message || "Failed to generate PNG"}`);
+      console.error("JPG Error:", error);
+      alert(`Error: ${error.message || "Failed to generate JPG"}`);
     } finally {
       setDownloadingPng(false);
     }

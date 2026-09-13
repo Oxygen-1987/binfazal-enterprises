@@ -18,7 +18,24 @@ export async function blobToBase64(blob: Blob): Promise<string> {
   });
 }
 
-// Unified save via share sheet on native, direct download on web
+export async function requestStoragePermission(): Promise<boolean> {
+  if (!isNativeApp()) return true;
+  if (Capacitor.getPlatform() !== "android") return true;
+
+  try {
+    const { Filesystem } = await import("@capacitor/filesystem");
+    const status = await Filesystem.checkPermissions();
+
+    if (status.publicStorage === "granted") return true;
+
+    const result = await Filesystem.requestPermissions();
+    return result.publicStorage === "granted";
+  } catch (error) {
+    console.error("Permission request failed:", error);
+    return false;
+  }
+}
+
 export async function saveFile(
   blob: Blob,
   fileName: string,
@@ -26,25 +43,30 @@ export async function saveFile(
 ): Promise<void> {
   if (isNativeApp()) {
     const { Filesystem, Directory } = await import("@capacitor/filesystem");
-    const { Share } = await import("@capacitor/share");
     const base64Data = await blobToBase64(blob);
 
-    const result = await Filesystem.writeFile({
+    // Try Documents first (worked for PDF)
+    try {
+      await Filesystem.writeFile({
+        path: fileName,
+        data: base64Data,
+        directory: Directory.Documents,
+        recursive: true,
+      });
+      console.log("Saved to Documents:", fileName);
+      return;
+    } catch (docError) {
+      console.log("Documents failed, trying ExternalStorage:", docError);
+    }
+
+    // Fallback to ExternalStorage
+    await Filesystem.writeFile({
       path: fileName,
       data: base64Data,
-      directory: Directory.Cache,
+      directory: Directory.ExternalStorage,
       recursive: true,
     });
-
-    await Share.share({
-      title: fileName,
-      text:
-        mimeType === "application/pdf"
-          ? "Save or share your ledger PDF"
-          : "Save or share your ledger image",
-      url: result.uri,
-      dialogTitle: "Save or Share File",
-    });
+    console.log("Saved to ExternalStorage:", fileName);
     return;
   } else {
     const url = window.URL.createObjectURL(blob);
@@ -121,9 +143,12 @@ export async function shareFile(
 }
 
 export function getSaveLocationMessage(): string {
-  return "";
-}
-
-export async function requestStoragePermission(): Promise<boolean> {
-  return true;
+  if (isNativeApp()) {
+    if (Capacitor.getPlatform() === "android") {
+      return "File saved to Documents folder";
+    } else if (Capacitor.getPlatform() === "ios") {
+      return "File saved to Files app";
+    }
+  }
+  return "File downloaded";
 }
