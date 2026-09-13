@@ -164,7 +164,10 @@ export default function NewJobPage() {
 
       if (insertError) {
         // Handle duplicate/conflict - probably already saved
-        if (insertError.code === "23505" || insertError.code === "409") {
+        if (
+          insertError.code === "23505" ||
+          insertError.message?.includes("duplicate")
+        ) {
           console.log("Job already saved, ignoring duplicate");
         } else {
           throw insertError;
@@ -172,11 +175,23 @@ export default function NewJobPage() {
       }
 
       if (action === "save_new") {
+        // Reset form for new entry
         setFormData({
-          /* reset */
+          job_date: new Date().toISOString().split("T")[0],
+          client_id: "",
+          client_name: "",
+          job_details: "",
+          paper_qty: "",
+          colors_qty: "1",
+          print_qty: "",
+          rate: "",
+          total_amount: "",
+          status: "new",
+          payment_status: "unpaid",
         });
         window.scrollTo(0, 0);
       } else {
+        // Save and close - go back to jobs list
         window.location.href = "/jobs";
       }
     } catch (err: any) {
