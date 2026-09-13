@@ -126,9 +126,11 @@ export function GlobalSearch() {
         .limit(3);
 
       jobs?.forEach((j) => {
+        const client = Array.isArray(j.clients) ? j.clients[0] : j.clients;
         const clientName =
-          j.clients?.company_name ||
-          `${j.clients?.first_name} ${j.clients?.last_name}`;
+          client?.company_name ||
+          `${client?.first_name ?? ""} ${client?.last_name ?? ""}`.trim();
+
         searchResults.push({
           id: j.id,
           type: "job",
@@ -150,9 +152,11 @@ export function GlobalSearch() {
         .limit(3);
 
       purchases?.forEach((p) => {
+        const vendor = Array.isArray(p.vendors) ? p.vendors[0] : p.vendors;
         const vendorName =
-          p.vendors?.company_name ||
-          `${p.vendors?.first_name} ${p.vendors?.last_name}`;
+          vendor?.company_name ||
+          `${vendor?.first_name ?? ""} ${vendor?.last_name ?? ""}`.trim();
+
         searchResults.push({
           id: p.id,
           type: "purchase",
