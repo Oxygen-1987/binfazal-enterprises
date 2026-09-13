@@ -14,6 +14,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { DatePicker } from "@/components/shared/date-picker";
 import {
   Building2,
   Users,
@@ -1007,7 +1008,7 @@ export default function SettingsPage() {
                         <Label htmlFor="joining_date">Joining Date</Label>
                         <DatePicker
                           value={newUser.joining_date}
-                          onChange={(date) =>
+                          onChange={(date: string) =>
                             setNewUser((prev) => ({
                               ...prev,
                               joining_date: date,
