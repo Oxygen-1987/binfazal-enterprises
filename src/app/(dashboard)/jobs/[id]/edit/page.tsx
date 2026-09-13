@@ -1,0 +1,518 @@
+// src/app/(dashboard)/jobs/[id]/edit/page.tsx
+"use client";
+
+import { useEffect, useState } from "react";
+import { useRouter, useParams } from "next/navigation";
+import { useAuth } from "@/context/auth-context";
+import { supabase } from "@/lib/supabase/client";
+import { Card, CardContent } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { DatePicker } from "@/components/shared/date-picker";
+import { ArrowLeft, Save, X, Trash2 } from "lucide-react";
+import Link from "next/link";
+
+interface Client {
+  id: string;
+  first_name: string;
+  last_name: string;
+  company_name: string;
+}
+
+export default function EditJobPage() {
+  const router = useRouter();
+  const params = useParams();
+  const { user, userRole } = useAuth();
+  const jobId = params.id as string;
+
+  const [clients, setClients] = useState<Client[]>([]);
+  const [filteredClients, setFilteredClients] = useState<Client[]>([]);
+  const [showClientDropdown, setShowClientDropdown] = useState(false);
+  const [clientSearch, setClientSearch] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [error, setError] = useState("");
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+
+  const [formData, setFormData] = useState({
+    job_date: "",
+    client_id: "",
+    client_name: "",
+    job_details: "",
+    paper_qty: "",
+    colors_qty: "1",
+    print_qty: "",
+    rate: "",
+    total_amount: "",
+    status: "new",
+    payment_status: "unpaid",
+  });
+
+  useEffect(() => {
+    fetchClients();
+    fetchJob();
+  }, [jobId]);
+
+  useEffect(() => {
+    if (clientSearch.trim() === "") {
+      setFilteredClients(clients);
+    } else {
+      const filtered = clients.filter(
+        (client) =>
+          client.first_name
+            .toLowerCase()
+            .includes(clientSearch.toLowerCase()) ||
+          client.last_name.toLowerCase().includes(clientSearch.toLowerCase()) ||
+          client.company_name
+            ?.toLowerCase()
+            .includes(clientSearch.toLowerCase()),
+      );
+      setFilteredClients(filtered);
+    }
+  }, [clientSearch, clients]);
+
+  const fetchClients = async () => {
+    const { data } = await supabase
+      .from("clients")
+      .select("id, first_name, last_name, company_name")
+      .order("created_at", { ascending: false });
+
+    if (data) {
+      setClients(data);
+      setFilteredClients(data);
+    }
+  };
+
+  const fetchJob = async () => {
+    setLoading(true);
+
+    const { data, error } = await supabase
+      .from("print_jobs")
+      .select(
+        `
+        *,
+        clients (
+          company_name,
+          first_name,
+          last_name
+        )
+      `,
+      )
+      .eq("id", jobId)
+      .single();
+
+    if (error) {
+      console.error("Error fetching job:", error);
+      setError("Job not found");
+    } else if (data) {
+      setFormData({
+        job_date: data.job_date || "",
+        client_id: data.client_id || "",
+        client_name:
+          data.clients?.company_name ||
+          `${data.clients?.first_name} ${data.clients?.last_name}` ||
+          "",
+        job_details: data.job_details || "",
+        paper_qty: data.paper_qty?.toString() || "",
+        colors_qty: data.colors_qty?.toString() || "1",
+        print_qty: data.print_qty?.toString() || "",
+        rate: data.rate?.toString() || "",
+        total_amount: data.total_amount?.toString() || "",
+        status: data.status || "new",
+        payment_status: data.payment_status || "unpaid",
+      });
+    }
+
+    setLoading(false);
+  };
+
+  const handleInputChange = (
+    e: React.ChangeEvent<
+      HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement
+    >,
+  ) => {
+    const { name, value } = e.target;
+    setFormData((prev) => ({ ...prev, [name]: value }));
+
+    // Auto-calculation
+    if (name === "print_qty" || name === "rate") {
+      const printQty =
+        name === "print_qty"
+          ? parseFloat(value)
+          : parseFloat(formData.print_qty);
+      const rate =
+        name === "rate" ? parseFloat(value) : parseFloat(formData.rate);
+
+      if (printQty && rate) {
+        const total = printQty * rate;
+        setFormData((prev) => ({
+          ...prev,
+          total_amount: total.toFixed(2),
+        }));
+      }
+    }
+
+    if (name === "total_amount") {
+      const total = parseFloat(value);
+      const printQty = parseFloat(formData.print_qty);
+
+      if (total && printQty) {
+        const calculatedRate = total / printQty;
+        setFormData((prev) => ({
+          ...prev,
+          rate: calculatedRate.toFixed(4),
+        }));
+      }
+    }
+  };
+
+  const handleDateChange = (date: string) => {
+    setFormData((prev) => ({ ...prev, job_date: date }));
+  };
+
+  const handleClientSelect = (client: Client) => {
+    setFormData((prev) => ({
+      ...prev,
+      client_id: client.id,
+      client_name:
+        client.company_name || `${client.first_name} ${client.last_name}`,
+    }));
+    setShowClientDropdown(false);
+    setClientSearch("");
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSaving(true);
+    setError("");
+
+    try {
+      const jobData = {
+        job_date: formData.job_date,
+        client_id: formData.client_id,
+        job_details: formData.job_details,
+        paper_qty: parseFloat(formData.paper_qty) || 0,
+        colors_qty: parseInt(formData.colors_qty) || 1,
+        print_qty: parseFloat(formData.print_qty) || 0,
+        rate: parseFloat(formData.rate) || 0,
+        total_amount: parseFloat(formData.total_amount) || 0,
+        status: formData.status,
+        payment_status: formData.payment_status,
+      };
+
+      const { error: updateError } = await supabase
+        .from("print_jobs")
+        .update(jobData)
+        .eq("id", jobId);
+
+      if (updateError) throw updateError;
+
+      router.push("/jobs");
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleDelete = async () => {
+    setDeleting(true);
+    try {
+      const { error } = await supabase
+        .from("print_jobs")
+        .delete()
+        .eq("id", jobId);
+
+      if (error) throw error;
+
+      router.push("/jobs");
+    } catch (err: any) {
+      setError(err.message);
+      setDeleting(false);
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="flex justify-center py-12">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#FF6B00]" />
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-6">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center space-x-4">
+          <Link href="/jobs">
+            <Button variant="ghost" size="icon">
+              <ArrowLeft className="h-5 w-5" />
+            </Button>
+          </Link>
+          <h1 className="text-2xl font-bold">Edit Print Job</h1>
+        </div>
+        {userRole === "owner" && (
+          <Button
+            variant="outline"
+            className="text-red-500 border-red-200 hover:bg-red-50"
+            onClick={() => setShowDeleteConfirm(true)}
+          >
+            <Trash2 className="mr-2 h-4 w-4" />
+            Delete
+          </Button>
+        )}
+      </div>
+
+      <Card>
+        <CardContent className="p-6">
+          <form onSubmit={handleSubmit} className="space-y-6">
+            {error && (
+              <div className="bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 p-3 rounded-md text-sm">
+                {error}
+              </div>
+            )}
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {/* Date */}
+              <div className="space-y-2">
+                <Label htmlFor="job_date">Date *</Label>
+                <DatePicker
+                  value={formData.job_date}
+                  onChange={handleDateChange}
+                  placeholder="DD/MM/YYYY"
+                />
+              </div>
+
+              {/* Client Selection */}
+              <div className="space-y-2 relative">
+                <Label htmlFor="client">Client *</Label>
+                <div className="relative">
+                  <Input
+                    id="client"
+                    value={formData.client_name}
+                    onChange={(e) => {
+                      setFormData((prev) => ({
+                        ...prev,
+                        client_name: e.target.value,
+                      }));
+                      setClientSearch(e.target.value);
+                      setShowClientDropdown(true);
+                    }}
+                    onFocus={() => setShowClientDropdown(true)}
+                    placeholder="Search and select client..."
+                    required
+                  />
+                  {showClientDropdown && (
+                    <div className="absolute z-10 w-full mt-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-md shadow-lg max-h-60 overflow-y-auto">
+                      {filteredClients.length === 0 ? (
+                        <div className="p-3 text-sm text-gray-500 text-center">
+                          No clients found
+                        </div>
+                      ) : (
+                        filteredClients.map((client) => (
+                          <button
+                            key={client.id}
+                            type="button"
+                            onClick={() => handleClientSelect(client)}
+                            className="w-full text-left px-4 py-2 hover:bg-gray-100 dark:hover:bg-gray-700"
+                          >
+                            <span className="font-medium">
+                              {client.company_name ||
+                                `${client.first_name} ${client.last_name}`}
+                            </span>
+                            {client.company_name && (
+                              <span className="text-sm text-gray-500 ml-2">
+                                ({client.first_name} {client.last_name})
+                              </span>
+                            )}
+                          </button>
+                        ))
+                      )}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Job Details */}
+              <div className="space-y-2 md:col-span-2">
+                <Label htmlFor="job_details">Job Details</Label>
+                <textarea
+                  id="job_details"
+                  name="job_details"
+                  value={formData.job_details}
+                  onChange={handleInputChange}
+                  rows={3}
+                  className="w-full rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 px-3 py-2 text-sm"
+                  placeholder="Enter job description..."
+                />
+              </div>
+
+              {/* Paper Quantity */}
+              <div className="space-y-2">
+                <Label htmlFor="paper_qty">Paper Quantity</Label>
+                <Input
+                  id="paper_qty"
+                  name="paper_qty"
+                  type="number"
+                  step="0.01"
+                  value={formData.paper_qty}
+                  onChange={handleInputChange}
+                  placeholder="0"
+                />
+              </div>
+
+              {/* Colors Quantity */}
+              <div className="space-y-2">
+                <Label htmlFor="colors_qty">Colors Quantity</Label>
+                <Input
+                  id="colors_qty"
+                  name="colors_qty"
+                  type="number"
+                  min="1"
+                  value={formData.colors_qty}
+                  onChange={handleInputChange}
+                  placeholder="1"
+                />
+              </div>
+
+              {/* Print Quantity */}
+              <div className="space-y-2">
+                <Label htmlFor="print_qty">Print Quantity *</Label>
+                <Input
+                  id="print_qty"
+                  name="print_qty"
+                  type="number"
+                  step="0.01"
+                  value={formData.print_qty}
+                  onChange={handleInputChange}
+                  placeholder="0"
+                  required
+                />
+              </div>
+
+              {/* Rate */}
+              <div className="space-y-2">
+                <Label htmlFor="rate">Rate *</Label>
+                <Input
+                  id="rate"
+                  name="rate"
+                  type="number"
+                  step="0.0001"
+                  value={formData.rate}
+                  onChange={handleInputChange}
+                  placeholder="0"
+                  required
+                />
+              </div>
+
+              {/* Total Amount */}
+              <div className="space-y-2 md:col-span-2">
+                <Label htmlFor="total_amount">Total Amount (PKR) *</Label>
+                <Input
+                  id="total_amount"
+                  name="total_amount"
+                  type="number"
+                  step="0.01"
+                  value={formData.total_amount}
+                  onChange={handleInputChange}
+                  placeholder="0"
+                  className="text-lg font-bold"
+                  required
+                />
+                <p className="text-xs text-gray-500">
+                  Auto-calculates from Qty × Rate, or enter manually to
+                  calculate rate
+                </p>
+              </div>
+
+              {/* Status */}
+              <div className="space-y-2">
+                <Label htmlFor="status">Job Status</Label>
+                <select
+                  id="status"
+                  name="status"
+                  value={formData.status}
+                  onChange={handleInputChange}
+                  className="w-full rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 px-3 py-2 text-sm"
+                >
+                  <option value="new">New</option>
+                  <option value="in_process">In Process</option>
+                  <option value="completed">Completed</option>
+                </select>
+              </div>
+
+              {/* Payment Status */}
+              <div className="space-y-2">
+                <Label htmlFor="payment_status">Payment Status</Label>
+                <select
+                  id="payment_status"
+                  name="payment_status"
+                  value={formData.payment_status}
+                  onChange={handleInputChange}
+                  className="w-full rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 px-3 py-2 text-sm"
+                >
+                  <option value="unpaid">Unpaid</option>
+                  <option value="partial">Partial</option>
+                  <option value="paid">Paid</option>
+                </select>
+              </div>
+            </div>
+
+            {/* Footer Buttons */}
+            <div className="flex justify-between space-x-3 pt-4 border-t border-gray-200 dark:border-gray-700">
+              <Link href="/jobs">
+                <Button variant="outline" type="button">
+                  <X className="mr-2 h-4 w-4" />
+                  Cancel
+                </Button>
+              </Link>
+              <Button type="submit" disabled={saving}>
+                <Save className="mr-2 h-4 w-4" />
+                {saving ? "Saving..." : "Save Changes"}
+              </Button>
+            </div>
+          </form>
+        </CardContent>
+      </Card>
+
+      {/* Delete Confirmation Modal */}
+      {showDeleteConfirm && (
+        <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
+          <Card className="w-full max-w-md">
+            <CardContent className="p-6">
+              <div className="flex items-center space-x-3 mb-4">
+                <div className="bg-red-100 dark:bg-red-900/30 p-2 rounded-full">
+                  <Trash2 className="h-5 w-5 text-red-600" />
+                </div>
+                <h3 className="text-lg font-bold">Delete Job?</h3>
+              </div>
+              <p className="text-sm text-gray-600 dark:text-gray-400 mb-6">
+                Are you sure you want to delete this job? This action cannot be
+                undone.
+              </p>
+              <div className="flex justify-end space-x-3">
+                <Button
+                  variant="outline"
+                  onClick={() => setShowDeleteConfirm(false)}
+                  disabled={deleting}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  className="bg-red-500 hover:bg-red-600"
+                  onClick={handleDelete}
+                  disabled={deleting}
+                >
+                  {deleting ? "Deleting..." : "Delete"}
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+    </div>
+  );
+}
