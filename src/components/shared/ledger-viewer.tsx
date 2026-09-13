@@ -354,10 +354,18 @@ export function LedgerViewer({
       await requestStoragePermission();
 
       const canvas = await generateCanvas();
+
+      // Convert canvas to blob with explicit type
       const blob = await new Promise<Blob | null>((resolve) => {
         canvas.toBlob((b) => resolve(b), "image/png", 1.0);
       });
-      if (!blob) throw new Error("Failed to create image");
+
+      if (!blob) {
+        throw new Error("Failed to create image blob");
+      }
+
+      console.log("PNG blob created:", blob.size, "bytes, type:", blob.type);
+
       const fileName = getFileName("png");
       await saveFile(blob, fileName, "image/png");
       alert(getSaveLocationMessage());

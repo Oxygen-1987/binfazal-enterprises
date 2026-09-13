@@ -18,7 +18,6 @@ export async function blobToBase64(blob: Blob): Promise<string> {
   });
 }
 
-// Request storage permission (Android only)
 export async function requestStoragePermission(): Promise<boolean> {
   if (!isNativeApp()) return true;
   if (Capacitor.getPlatform() !== "android") return true;
@@ -37,7 +36,7 @@ export async function requestStoragePermission(): Promise<boolean> {
   }
 }
 
-// Save file directly to device storage (no share sheet)
+// Save file to Documents folder (works for both PDF and JPG)
 export async function saveFile(
   blob: Blob,
   fileName: string,
@@ -47,7 +46,7 @@ export async function saveFile(
     const { Filesystem, Directory } = await import("@capacitor/filesystem");
     const base64Data = await blobToBase64(blob);
 
-    // Try Documents folder first
+    // Try Documents first
     try {
       await Filesystem.writeFile({
         path: fileName,
@@ -57,32 +56,18 @@ export async function saveFile(
       });
       return;
     } catch (docError) {
-      console.log("Documents folder failed, trying ExternalStorage:", docError);
+      console.log("Documents failed, trying ExternalStorage:", docError);
     }
 
-    // Try ExternalStorage
-    try {
-      await Filesystem.writeFile({
-        path: fileName,
-        data: base64Data,
-        directory: Directory.ExternalStorage,
-        recursive: true,
-      });
-      return;
-    } catch (extError) {
-      console.log("ExternalStorage failed, trying Cache:", extError);
-    }
-
-    // Fallback: Cache (always works but only accessible by app)
+    // Fallback: ExternalStorage
     await Filesystem.writeFile({
       path: fileName,
       data: base64Data,
-      directory: Directory.Cache,
+      directory: Directory.ExternalStorage,
       recursive: true,
     });
     return;
   } else {
-    // Web: standard download
     const url = window.URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
@@ -94,7 +79,6 @@ export async function saveFile(
   }
 }
 
-// Share file via native share sheet (WhatsApp, Gmail, etc.)
 export async function shareFile(
   blob: Blob,
   fileName: string,
@@ -162,7 +146,7 @@ export function getSaveLocationMessage(): string {
     if (Capacitor.getPlatform() === "android") {
       return "File saved to Documents folder";
     } else if (Capacitor.getPlatform() === "ios") {
-      return "File saved to Files app → On My iPhone → BinFazal";
+      return "File saved to Files app";
     }
   }
   return "File downloaded";
