@@ -18,24 +18,7 @@ export async function blobToBase64(blob: Blob): Promise<string> {
   });
 }
 
-export async function requestStoragePermission(): Promise<boolean> {
-  if (!isNativeApp()) return true;
-  if (Capacitor.getPlatform() !== "android") return true;
-
-  try {
-    const { Filesystem } = await import("@capacitor/filesystem");
-    const status = await Filesystem.checkPermissions();
-
-    if (status.publicStorage === "granted") return true;
-
-    const result = await Filesystem.requestPermissions();
-    return result.publicStorage === "granted";
-  } catch (error) {
-    console.error("Permission request failed:", error);
-    return false;
-  }
-}
-
+// Save file - uses the same flow as share (which works)
 export async function saveFile(
   blob: Blob,
   fileName: string,
@@ -43,32 +26,30 @@ export async function saveFile(
 ): Promise<void> {
   if (isNativeApp()) {
     const { Filesystem, Directory } = await import("@capacitor/filesystem");
+    const { Share } = await import("@capacitor/share");
     const base64Data = await blobToBase64(blob);
 
-    // Try Documents first (worked for PDF)
-    try {
-      await Filesystem.writeFile({
-        path: fileName,
-        data: base64Data,
-        directory: Directory.Documents,
-        recursive: true,
-      });
-      console.log("Saved to Documents:", fileName);
-      return;
-    } catch (docError) {
-      console.log("Documents failed, trying ExternalStorage:", docError);
-    }
-
-    // Fallback to ExternalStorage
-    await Filesystem.writeFile({
+    // Write to Cache (always allowed)
+    const result = await Filesystem.writeFile({
       path: fileName,
       data: base64Data,
-      directory: Directory.ExternalStorage,
+      directory: Directory.Cache,
       recursive: true,
     });
-    console.log("Saved to ExternalStorage:", fileName);
+
+    // Open share sheet so user can save/send
+    await Share.share({
+      title: fileName,
+      text:
+        mimeType === "application/pdf"
+          ? "Save or share your ledger PDF"
+          : "Save or share your ledger image",
+      url: result.uri,
+      dialogTitle: "Save or Share File",
+    });
     return;
   } else {
+    // Web: standard download
     const url = window.URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
@@ -89,39 +70,16 @@ export async function shareFile(
   if (isNativeApp()) {
     const { Filesystem, Directory } = await import("@capacitor/filesystem");
     const { Share } = await import("@capacitor/share");
+    const base64Data = await blobToBase64(blob);
 
     try {
-      // 1. Convert blob to base64
-      const base64Data = await blobToBase64(blob);
-      console.log("Share: base64 length", base64Data.length);
-
-      // 2. Delete existing file with same name (avoid cache conflicts)
-      try {
-        await Filesystem.deleteFile({
-          path: fileName,
-          directory: Directory.Cache,
-        });
-      } catch (e) {
-        // File didn't exist - ignore
-      }
-
-      // 3. Write fresh file to cache
       const result = await Filesystem.writeFile({
         path: fileName,
         data: base64Data,
         directory: Directory.Cache,
         recursive: true,
       });
-      console.log("Share: wrote to", result.uri);
 
-      // 4. Verify file exists
-      const stat = await Filesystem.stat({
-        path: fileName,
-        directory: Directory.Cache,
-      });
-      console.log("Share: file size", stat.size);
-
-      // 5. Share
       await Share.share({
         title,
         text: text || title,
@@ -130,21 +88,16 @@ export async function shareFile(
       });
       return true;
     } catch (error: any) {
-      console.error("Share error:", error);
-
-      // User cancelled
+      console.error("Error sharing file:", error);
       if (
         error.message?.includes("cancel") ||
         error.message?.includes("abort")
       ) {
         return false;
       }
-
-      // Any other error - show real message
-      throw new Error(error.message || "Share failed");
+      throw error;
     }
   } else {
-    // Web share (unchanged)
     if (
       typeof navigator !== "undefined" &&
       navigator.share &&
@@ -153,12 +106,16 @@ export async function shareFile(
       try {
         const file = new File([blob], fileName, { type: blob.type });
         if (navigator.canShare({ files: [file] })) {
-          await navigator.share({ files: [file], title, text: text || title });
+          await navigator.share({
+            files: [file],
+            title,
+            text: text || title,
+          });
           return true;
         }
       } catch (error: any) {
         if (error.name === "AbortError") return false;
-        console.error("Web share error:", error);
+        console.error("Error sharing file:", error);
       }
     }
     await saveFile(blob, fileName, blob.type);
@@ -167,12 +124,9 @@ export async function shareFile(
 }
 
 export function getSaveLocationMessage(): string {
-  if (isNativeApp()) {
-    if (Capacitor.getPlatform() === "android") {
-      return "File saved to Documents folder";
-    } else if (Capacitor.getPlatform() === "ios") {
-      return "File saved to Files app";
-    }
-  }
-  return "File downloaded";
+  return "";
+}
+
+export async function requestStoragePermission(): Promise<boolean> {
+  return true;
 }
