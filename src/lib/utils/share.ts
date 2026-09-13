@@ -18,6 +18,26 @@ export async function blobToBase64(blob: Blob): Promise<string> {
   });
 }
 
+// Request storage permission (Android only)
+export async function requestStoragePermission(): Promise<boolean> {
+  if (!isNativeApp()) return true;
+  if (Capacitor.getPlatform() !== "android") return true;
+
+  try {
+    const { Filesystem } = await import("@capacitor/filesystem");
+    const status = await Filesystem.checkPermissions();
+
+    if (status.publicStorage === "granted") return true;
+
+    const result = await Filesystem.requestPermissions();
+    return result.publicStorage === "granted";
+  } catch (error) {
+    console.error("Permission request failed:", error);
+    return false;
+  }
+}
+
+// Save file directly to device storage (no share sheet)
 export async function saveFile(
   blob: Blob,
   fileName: string,
@@ -25,32 +45,41 @@ export async function saveFile(
 ): Promise<void> {
   if (isNativeApp()) {
     const { Filesystem, Directory } = await import("@capacitor/filesystem");
-    const { Share } = await import("@capacitor/share");
     const base64Data = await blobToBase64(blob);
 
-    // Write to Cache (always allowed, no permissions needed)
-    const result = await Filesystem.writeFile({
+    // Try Documents folder first
+    try {
+      await Filesystem.writeFile({
+        path: fileName,
+        data: base64Data,
+        directory: Directory.Documents,
+        recursive: true,
+      });
+      return;
+    } catch (docError) {
+      console.log("Documents folder failed, trying ExternalStorage:", docError);
+    }
+
+    // Try ExternalStorage
+    try {
+      await Filesystem.writeFile({
+        path: fileName,
+        data: base64Data,
+        directory: Directory.ExternalStorage,
+        recursive: true,
+      });
+      return;
+    } catch (extError) {
+      console.log("ExternalStorage failed, trying Cache:", extError);
+    }
+
+    // Fallback: Cache (always works but only accessible by app)
+    await Filesystem.writeFile({
       path: fileName,
       data: base64Data,
       directory: Directory.Cache,
       recursive: true,
     });
-
-    // Open share sheet so user can Save/Send the file
-    try {
-      await Share.share({
-        title: fileName,
-        text:
-          mimeType === "application/pdf"
-            ? "Save or share your ledger PDF"
-            : "Save or share your ledger image",
-        url: result.uri,
-        dialogTitle: "Save or Share File",
-      });
-    } catch (error: any) {
-      // User cancelled - file still in cache, no error
-      console.log("User cancelled");
-    }
     return;
   } else {
     // Web: standard download
@@ -65,6 +94,7 @@ export async function saveFile(
   }
 }
 
+// Share file via native share sheet (WhatsApp, Gmail, etc.)
 export async function shareFile(
   blob: Blob,
   fileName: string,

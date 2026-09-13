@@ -331,11 +331,14 @@ export function LedgerViewer({
   const handleDownloadPDF = async () => {
     setDownloading(true);
     try {
+      const { requestStoragePermission } = await import("@/lib/utils/share");
+      await requestStoragePermission();
+
       const canvas = await generateCanvas();
       const pdfBlob = await generatePDFBlob(canvas);
       const fileName = getFileName("pdf");
       await saveFile(pdfBlob, fileName, "application/pdf");
-      // No alert - the share sheet opens automatically
+      alert(getSaveLocationMessage());
     } catch (error: any) {
       console.error("PDF Error:", error);
       alert(`Error: ${error.message || "Failed to generate PDF"}`);
@@ -347,6 +350,9 @@ export function LedgerViewer({
   const handleDownloadPNG = async () => {
     setDownloadingPng(true);
     try {
+      const { requestStoragePermission } = await import("@/lib/utils/share");
+      await requestStoragePermission();
+
       const canvas = await generateCanvas();
       const blob = await new Promise<Blob | null>((resolve) => {
         canvas.toBlob((b) => resolve(b), "image/png", 1.0);
@@ -354,7 +360,7 @@ export function LedgerViewer({
       if (!blob) throw new Error("Failed to create image");
       const fileName = getFileName("png");
       await saveFile(blob, fileName, "image/png");
-      // No alert - the share sheet opens automatically
+      alert(getSaveLocationMessage());
     } catch (error: any) {
       console.error("PNG Error:", error);
       alert(`Error: ${error.message || "Failed to generate PNG"}`);
