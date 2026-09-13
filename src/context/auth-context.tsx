@@ -69,10 +69,31 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       .from("users")
       .select("id, email, full_name, role, avatar_url")
       .eq("id", userId)
-      .single();
+      .maybeSingle(); // Use maybeSingle instead of single
+
+    if (error) {
+      console.error("Error fetching user profile:", error);
+    }
 
     if (data) {
       setUserProfile(data);
+    } else {
+      // User record doesn't exist - create it from auth metadata
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      if (user) {
+        setUserProfile({
+          id: user.id,
+          email: user.email || "",
+          full_name:
+            user.user_metadata?.full_name ||
+            user.email?.split("@")[0] ||
+            "User",
+          role: "employee",
+          avatar_url: null,
+        });
+      }
     }
     setLoading(false);
   };

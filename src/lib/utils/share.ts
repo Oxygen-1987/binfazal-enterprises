@@ -89,16 +89,39 @@ export async function shareFile(
   if (isNativeApp()) {
     const { Filesystem, Directory } = await import("@capacitor/filesystem");
     const { Share } = await import("@capacitor/share");
-    const base64Data = await blobToBase64(blob);
 
     try {
+      // 1. Convert blob to base64
+      const base64Data = await blobToBase64(blob);
+      console.log("Share: base64 length", base64Data.length);
+
+      // 2. Delete existing file with same name (avoid cache conflicts)
+      try {
+        await Filesystem.deleteFile({
+          path: fileName,
+          directory: Directory.Cache,
+        });
+      } catch (e) {
+        // File didn't exist - ignore
+      }
+
+      // 3. Write fresh file to cache
       const result = await Filesystem.writeFile({
         path: fileName,
         data: base64Data,
         directory: Directory.Cache,
         recursive: true,
       });
+      console.log("Share: wrote to", result.uri);
 
+      // 4. Verify file exists
+      const stat = await Filesystem.stat({
+        path: fileName,
+        directory: Directory.Cache,
+      });
+      console.log("Share: file size", stat.size);
+
+      // 5. Share
       await Share.share({
         title,
         text: text || title,
@@ -107,16 +130,21 @@ export async function shareFile(
       });
       return true;
     } catch (error: any) {
-      console.error("Error sharing file:", error);
+      console.error("Share error:", error);
+
+      // User cancelled
       if (
         error.message?.includes("cancel") ||
         error.message?.includes("abort")
       ) {
         return false;
       }
-      throw error;
+
+      // Any other error - show real message
+      throw new Error(error.message || "Share failed");
     }
   } else {
+    // Web share (unchanged)
     if (
       typeof navigator !== "undefined" &&
       navigator.share &&
@@ -125,16 +153,12 @@ export async function shareFile(
       try {
         const file = new File([blob], fileName, { type: blob.type });
         if (navigator.canShare({ files: [file] })) {
-          await navigator.share({
-            files: [file],
-            title,
-            text: text || title,
-          });
+          await navigator.share({ files: [file], title, text: text || title });
           return true;
         }
       } catch (error: any) {
         if (error.name === "AbortError") return false;
-        console.error("Error sharing file:", error);
+        console.error("Web share error:", error);
       }
     }
     await saveFile(blob, fileName, blob.type);

@@ -394,7 +394,7 @@ export function LedgerViewer({
       await shareFile(pdfBlob, fileName, "Client Ledger", shareText);
     } catch (error: any) {
       console.error("Share Error:", error);
-      alert(`Error: ${error.message || "Failed to share"}`);
+      alert(`Share failed: ${error.message || "Unknown error"}`);
     } finally {
       setSharing(false);
     }

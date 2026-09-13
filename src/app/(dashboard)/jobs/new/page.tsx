@@ -1,135 +1,147 @@
 // src/app/(dashboard)/jobs/new/page.tsx
-"use client"
+"use client";
 
-import { useEffect, useState } from 'react'
-import { useRouter } from 'next/navigation'
-import { useAuth } from '@/context/auth-context'
-import { supabase } from '@/lib/supabase/client'
-import { Card, CardContent } from '@/components/ui/card'
-import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
-import { DatePicker } from '@/components/shared/date-picker'
-import { 
-  ArrowLeft, 
-  Save, 
-  PlusCircle,
-  X,
-} from 'lucide-react'
-import Link from 'next/link'
+import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
+import { useAuth } from "@/context/auth-context";
+import { supabase } from "@/lib/supabase/client";
+import { Card, CardContent } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { DatePicker } from "@/components/shared/date-picker";
+import { ArrowLeft, Save, PlusCircle, X } from "lucide-react";
+import Link from "next/link";
 
 interface Client {
-  id: string
-  first_name: string
-  last_name: string
-  company_name: string
+  id: string;
+  first_name: string;
+  last_name: string;
+  company_name: string;
 }
 
 export default function NewJobPage() {
-  const router = useRouter()
-  const { user } = useAuth()
-  
-  const [clients, setClients] = useState<Client[]>([])
-  const [filteredClients, setFilteredClients] = useState<Client[]>([])
-  const [showClientDropdown, setShowClientDropdown] = useState(false)
-  const [clientSearch, setClientSearch] = useState('')
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState('')
-  
+  const router = useRouter();
+  const { user } = useAuth();
+
+  const [clients, setClients] = useState<Client[]>([]);
+  const [filteredClients, setFilteredClients] = useState<Client[]>([]);
+  const [showClientDropdown, setShowClientDropdown] = useState(false);
+  const [clientSearch, setClientSearch] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+
   const [formData, setFormData] = useState({
-    job_date: new Date().toISOString().split('T')[0],
-    client_id: '',
-    client_name: '',
-    job_details: '',
-    paper_qty: '',
-    colors_qty: '1',
-    print_qty: '',
-    rate: '',
-    total_amount: '',
-    status: 'new',
-    payment_status: 'unpaid',
-  })
+    job_date: new Date().toISOString().split("T")[0],
+    client_id: "",
+    client_name: "",
+    job_details: "",
+    paper_qty: "",
+    colors_qty: "1",
+    print_qty: "",
+    rate: "",
+    total_amount: "",
+    status: "new",
+    payment_status: "unpaid",
+  });
 
   useEffect(() => {
-    fetchClients()
-  }, [])
+    fetchClients();
+  }, []);
 
   useEffect(() => {
-    if (clientSearch.trim() === '') {
-      setFilteredClients(clients)
+    if (clientSearch.trim() === "") {
+      setFilteredClients(clients);
     } else {
-      const filtered = clients.filter(client => 
-        client.first_name.toLowerCase().includes(clientSearch.toLowerCase()) ||
-        client.last_name.toLowerCase().includes(clientSearch.toLowerCase()) ||
-        client.company_name?.toLowerCase().includes(clientSearch.toLowerCase())
-      )
-      setFilteredClients(filtered)
+      const filtered = clients.filter(
+        (client) =>
+          client.first_name
+            .toLowerCase()
+            .includes(clientSearch.toLowerCase()) ||
+          client.last_name.toLowerCase().includes(clientSearch.toLowerCase()) ||
+          client.company_name
+            ?.toLowerCase()
+            .includes(clientSearch.toLowerCase()),
+      );
+      setFilteredClients(filtered);
     }
-  }, [clientSearch, clients])
+  }, [clientSearch, clients]);
 
   const fetchClients = async () => {
     const { data } = await supabase
-      .from('clients')
-      .select('id, first_name, last_name, company_name')
-      .order('created_at', { ascending: false })
+      .from("clients")
+      .select("id, first_name, last_name, company_name")
+      .order("created_at", { ascending: false });
 
     if (data) {
-      setClients(data)
-      setFilteredClients(data)
+      setClients(data);
+      setFilteredClients(data);
     }
-  }
+  };
 
-  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
-    const { name, value } = e.target
-    setFormData(prev => ({ ...prev, [name]: value }))
+  const handleInputChange = (
+    e: React.ChangeEvent<
+      HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement
+    >,
+  ) => {
+    const { name, value } = e.target;
+    setFormData((prev) => ({ ...prev, [name]: value }));
 
     // Auto-calculation logic
-    if (name === 'print_qty' || name === 'rate') {
-      const printQty = name === 'print_qty' ? parseFloat(value) : parseFloat(formData.print_qty)
-      const rate = name === 'rate' ? parseFloat(value) : parseFloat(formData.rate)
-      
+    if (name === "print_qty" || name === "rate") {
+      const printQty =
+        name === "print_qty"
+          ? parseFloat(value)
+          : parseFloat(formData.print_qty);
+      const rate =
+        name === "rate" ? parseFloat(value) : parseFloat(formData.rate);
+
       if (printQty && rate) {
-        const total = printQty * rate
-        setFormData(prev => ({
+        const total = printQty * rate;
+        setFormData((prev) => ({
           ...prev,
-          total_amount: total.toFixed(2)
-        }))
+          total_amount: total.toFixed(2),
+        }));
       }
     }
 
     // If total is entered manually, calculate rate
-    if (name === 'total_amount') {
-      const total = parseFloat(value)
-      const printQty = parseFloat(formData.print_qty)
-      
+    if (name === "total_amount") {
+      const total = parseFloat(value);
+      const printQty = parseFloat(formData.print_qty);
+
       if (total && printQty) {
-        const calculatedRate = total / printQty
-        setFormData(prev => ({
+        const calculatedRate = total / printQty;
+        setFormData((prev) => ({
           ...prev,
-          rate: calculatedRate.toFixed(4)
-        }))
+          rate: calculatedRate.toFixed(4),
+        }));
       }
     }
-  }
+  };
 
   const handleDateChange = (date: string) => {
-    setFormData(prev => ({ ...prev, job_date: date }))
-  }
+    setFormData((prev) => ({ ...prev, job_date: date }));
+  };
 
   const handleClientSelect = (client: Client) => {
-    setFormData(prev => ({
+    setFormData((prev) => ({
       ...prev,
       client_id: client.id,
-      client_name: client.company_name || `${client.first_name} ${client.last_name}`
-    }))
-    setShowClientDropdown(false)
-    setClientSearch('')
-  }
+      client_name:
+        client.company_name || `${client.first_name} ${client.last_name}`,
+    }));
+    setShowClientDropdown(false);
+    setClientSearch("");
+  };
 
-  const handleSubmit = async (e: React.FormEvent, action: 'save_new' | 'save_close') => {
-    e.preventDefault()
-    setLoading(true)
-    setError('')
+  const handleSubmit = async (
+    e: React.FormEvent,
+    action: "save_new" | "save_close",
+  ) => {
+    e.preventDefault();
+    setLoading(true);
+    setError("");
 
     try {
       const jobData = {
@@ -144,39 +156,35 @@ export default function NewJobPage() {
         status: formData.status,
         payment_status: formData.payment_status,
         created_by: user?.id,
-      }
+      };
 
       const { error: insertError } = await supabase
-        .from('print_jobs')
-        .insert(jobData)
+        .from("print_jobs")
+        .insert(jobData);
 
-      if (insertError) throw insertError
+      if (insertError) {
+        // Handle duplicate/conflict - probably already saved
+        if (insertError.code === "23505" || insertError.code === "409") {
+          console.log("Job already saved, ignoring duplicate");
+        } else {
+          throw insertError;
+        }
+      }
 
-      if (action === 'save_new') {
-        // Reset form for new entry
+      if (action === "save_new") {
         setFormData({
-          job_date: new Date().toISOString().split('T')[0],
-          client_id: '',
-          client_name: '',
-          job_details: '',
-          paper_qty: '',
-          colors_qty: '1',
-          print_qty: '',
-          rate: '',
-          total_amount: '',
-          status: 'new',
-          payment_status: 'unpaid',
-        })
+          /* reset */
+        });
+        window.scrollTo(0, 0);
       } else {
-        // Save and close - go back to jobs list
-        router.push('/jobs')
+        window.location.href = "/jobs";
       }
     } catch (err: any) {
-      setError(err.message)
+      setError(err.message);
     } finally {
-      setLoading(false)
+      setLoading(false);
     }
-  }
+  };
 
   return (
     <div className="space-y-6">
@@ -218,9 +226,12 @@ export default function NewJobPage() {
                     id="client"
                     value={formData.client_name}
                     onChange={(e) => {
-                      setFormData(prev => ({ ...prev, client_name: e.target.value }))
-                      setClientSearch(e.target.value)
-                      setShowClientDropdown(true)
+                      setFormData((prev) => ({
+                        ...prev,
+                        client_name: e.target.value,
+                      }));
+                      setClientSearch(e.target.value);
+                      setShowClientDropdown(true);
                     }}
                     onFocus={() => setShowClientDropdown(true)}
                     placeholder="Search and select client..."
@@ -230,10 +241,16 @@ export default function NewJobPage() {
                     <div className="absolute z-10 w-full mt-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-md shadow-lg max-h-60 overflow-y-auto">
                       {filteredClients.length === 0 ? (
                         <div className="p-3 text-sm text-gray-500 text-center">
-                          No clients found. <Link href="/clients/new" className="text-[#FF6B00] hover:underline">Add new client</Link>
+                          No clients found.{" "}
+                          <Link
+                            href="/clients/new"
+                            className="text-[#FF6B00] hover:underline"
+                          >
+                            Add new client
+                          </Link>
                         </div>
                       ) : (
-                        filteredClients.map(client => (
+                        filteredClients.map((client) => (
                           <button
                             key={client.id}
                             type="button"
@@ -241,7 +258,8 @@ export default function NewJobPage() {
                             className="w-full text-left px-4 py-2 hover:bg-gray-100 dark:hover:bg-gray-700"
                           >
                             <span className="font-medium">
-                              {client.company_name || `${client.first_name} ${client.last_name}`}
+                              {client.company_name ||
+                                `${client.first_name} ${client.last_name}`}
                             </span>
                             {client.company_name && (
                               <span className="text-sm text-gray-500 ml-2">
@@ -343,7 +361,8 @@ export default function NewJobPage() {
                   required
                 />
                 <p className="text-xs text-gray-500">
-                  Auto-calculates from Qty × Rate, or enter manually to calculate rate
+                  Auto-calculates from Qty × Rate, or enter manually to
+                  calculate rate
                 </p>
               </div>
 
@@ -389,22 +408,22 @@ export default function NewJobPage() {
                 </Button>
               </Link>
               <div className="flex space-x-3">
-                <Button 
-                  type="button" 
+                <Button
+                  type="button"
                   variant="outline"
                   disabled={loading}
-                  onClick={(e) => handleSubmit(e, 'save_new')}
+                  onClick={(e) => handleSubmit(e, "save_new")}
                 >
                   <PlusCircle className="mr-2 h-4 w-4" />
-                  {loading ? 'Saving...' : 'Save and New'}
+                  {loading ? "Saving..." : "Save and New"}
                 </Button>
-                <Button 
+                <Button
                   type="button"
                   disabled={loading}
-                  onClick={(e) => handleSubmit(e, 'save_close')}
+                  onClick={(e) => handleSubmit(e, "save_close")}
                 >
                   <Save className="mr-2 h-4 w-4" />
-                  {loading ? 'Saving...' : 'Save and Close'}
+                  {loading ? "Saving..." : "Save and Close"}
                 </Button>
               </div>
             </div>
@@ -412,5 +431,5 @@ export default function NewJobPage() {
         </CardContent>
       </Card>
     </div>
-  )
+  );
 }
