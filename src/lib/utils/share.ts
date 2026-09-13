@@ -5,11 +5,13 @@ export function isNativeApp(): boolean {
   return Capacitor.isNativePlatform();
 }
 
-async function blobToBase64(blob: Blob): Promise<string> {
+export async function blobToBase64(blob: Blob): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onloadend = () => {
-      const base64 = (reader.result as string).split(",")[1];
+      const result = reader.result as string;
+      // Remove data URI prefix
+      const base64 = result.includes(",") ? result.split(",")[1] : result;
       resolve(base64);
     };
     reader.onerror = reject;
@@ -97,8 +99,7 @@ export async function shareFile(
       ) {
         return false;
       }
-      await saveFile(blob, fileName, blob.type);
-      return false;
+      throw error;
     }
   } else {
     if (
@@ -122,18 +123,6 @@ export async function shareFile(
       }
     }
     await saveFile(blob, fileName, blob.type);
-    return false;
-  }
-}
-
-export function canShareFiles(): boolean {
-  if (isNativeApp()) return true;
-  if (typeof navigator === "undefined") return false;
-  if (!navigator.share || !navigator.canShare) return false;
-  try {
-    const testFile = new File(["test"], "test.txt", { type: "text/plain" });
-    return navigator.canShare({ files: [testFile] });
-  } catch {
     return false;
   }
 }

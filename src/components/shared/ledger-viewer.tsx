@@ -9,6 +9,25 @@ import { Download, FileImage, Loader2, Share2 } from "lucide-react";
 import { formatCurrency, formatDate } from "@/lib/utils/format";
 import { shareFile, saveFile, getSaveLocationMessage } from "@/lib/utils/share";
 
+async function imageUrlToBase64(url: string): Promise<string> {
+  // If it's already a data URI, return as is
+  if (url.startsWith("data:")) return url;
+
+  try {
+    const response = await fetch(url);
+    const blob = await response.blob();
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onloadend = () => resolve(reader.result as string);
+      reader.onerror = reject;
+      reader.readAsDataURL(blob);
+    });
+  } catch (error) {
+    console.error("Failed to convert image to base64:", error);
+    return url; // Fallback to original URL
+  }
+}
+
 interface LedgerEntry {
   id: string;
   date: string;
@@ -56,6 +75,7 @@ export function LedgerViewer({
   const [sharing, setSharing] = useState(false);
   const [statementPeriod, setStatementPeriod] = useState({ from: "", to: "" });
   const ledgerRef = useRef<HTMLDivElement>(null);
+  const [templateBase64, setTemplateBase64] = useState<string>("");
 
   useEffect(() => {
     fetchBusinessInfo();
@@ -72,6 +92,17 @@ export function LedgerViewer({
 
     if (data) {
       setBusinessInfo(data);
+
+      // Convert template to base64 (required for mobile PDF/JPG generation)
+      if (data.ledger_template_url) {
+        try {
+          const base64 = await imageUrlToBase64(data.ledger_template_url);
+          setTemplateBase64(base64);
+          console.log("Template converted to base64, length:", base64.length);
+        } catch (err) {
+          console.error("Failed to convert template to base64:", err);
+        }
+      }
     }
   };
 
@@ -216,35 +247,65 @@ export function LedgerViewer({
   const generateCanvas = async () => {
     const html2canvas = (await import("html2canvas")).default;
     const element = ledgerRef.current;
-    if (!element) throw new Error("Ledger element not found");
 
+    if (!element) {
+      throw new Error("Ledger element not found");
+    }
+
+    if (!templateBase64) {
+      throw new Error(
+        "Template not loaded. Please wait or re-upload template.",
+      );
+    }
+
+    // Save original styles
+    const originalStyles = {
+      display: element.style.display,
+      position: element.style.position,
+      left: element.style.left,
+      top: element.style.top,
+      zIndex: element.style.zIndex,
+      opacity: element.style.opacity,
+    };
+
+    // Position on-screen but invisible
     element.style.display = "block";
     element.style.position = "fixed";
-    element.style.left = "-9999px";
+    element.style.left = "0";
     element.style.top = "0";
+    element.style.zIndex = "-1";
+    element.style.opacity = "0";
+    element.style.pointerEvents = "none";
 
+    // Wait for render
     await new Promise((resolve) => setTimeout(resolve, 500));
 
-    const canvas = await html2canvas(element, {
-      scale: 2,
-      useCORS: true,
-      allowTaint: true,
-      backgroundColor: "#ffffff",
-      logging: false,
-      width: A4_WIDTH_PX,
-      height: A4_HEIGHT_PX,
-      windowWidth: A4_WIDTH_PX,
-      windowHeight: A4_HEIGHT_PX,
-    });
+    try {
+      const canvas = await html2canvas(element, {
+        scale: 2,
+        useCORS: true,
+        allowTaint: false,
+        backgroundColor: "#ffffff",
+        logging: false,
+        width: A4_WIDTH_PX,
+        height: A4_HEIGHT_PX,
+        windowWidth: A4_WIDTH_PX,
+        windowHeight: A4_HEIGHT_PX,
+        imageTimeout: 15000,
+      });
 
-    element.style.display = "none";
-    element.style.position = "";
-    element.style.left = "";
-    element.style.top = "";
-
-    return canvas;
+      return canvas;
+    } finally {
+      // Restore styles
+      element.style.display = originalStyles.display;
+      element.style.position = originalStyles.position;
+      element.style.left = originalStyles.left;
+      element.style.top = originalStyles.top;
+      element.style.zIndex = originalStyles.zIndex;
+      element.style.opacity = originalStyles.opacity;
+      element.style.pointerEvents = "";
+    }
   };
-
   // Generate PDF Blob from canvas
   const generatePDFBlob = async (canvas: HTMLCanvasElement): Promise<Blob> => {
     const { jsPDF } = await import("jspdf");
@@ -366,7 +427,7 @@ export function LedgerViewer({
     );
   }
 
-  const hasTemplate = !!businessInfo?.ledger_template_url;
+  const hasTemplate = !!businessInfo?.ledger_template_url && !!templateBase64;
 
   return (
     <div className="space-y-6">
@@ -549,7 +610,9 @@ export function LedgerViewer({
               width: `${A4_WIDTH_PX}px`,
               height: `${A4_HEIGHT_PX}px`,
               padding: "60px 45px 45px 45px",
-              backgroundImage: `url(${businessInfo?.ledger_template_url})`,
+              backgroundImage: `url(${
+                templateBase64 || businessInfo?.ledger_template_url
+              })`,
               backgroundSize: "100% 100%",
               backgroundPosition: "top left",
               backgroundRepeat: "no-repeat",
