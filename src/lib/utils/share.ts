@@ -25,34 +25,35 @@ export async function saveFile(
 ): Promise<void> {
   if (isNativeApp()) {
     const { Filesystem, Directory } = await import("@capacitor/filesystem");
+    const { Share } = await import("@capacitor/share");
     const base64Data = await blobToBase64(blob);
 
-    try {
-      await Filesystem.writeFile({
-        path: fileName,
-        data: base64Data,
-        directory: Directory.Documents,
-        recursive: true,
-      });
+    // Write to Cache (always allowed, no permissions needed)
+    const result = await Filesystem.writeFile({
+      path: fileName,
+      data: base64Data,
+      directory: Directory.Cache,
+      recursive: true,
+    });
 
-      if (Capacitor.getPlatform() === "android") {
-        try {
-          await Filesystem.writeFile({
-            path: fileName,
-            data: base64Data,
-            directory: Directory.ExternalStorage,
-            recursive: true,
-          });
-        } catch (e) {
-          console.log("External storage not available");
-        }
-      }
-      return;
-    } catch (error) {
-      console.error("Error saving file with Capacitor:", error);
-      throw error;
+    // Open share sheet so user can Save/Send the file
+    try {
+      await Share.share({
+        title: fileName,
+        text:
+          mimeType === "application/pdf"
+            ? "Save or share your ledger PDF"
+            : "Save or share your ledger image",
+        url: result.uri,
+        dialogTitle: "Save or Share File",
+      });
+    } catch (error: any) {
+      // User cancelled - file still in cache, no error
+      console.log("User cancelled");
     }
+    return;
   } else {
+    // Web: standard download
     const url = window.URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;

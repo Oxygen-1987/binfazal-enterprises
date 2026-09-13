@@ -335,7 +335,7 @@ export function LedgerViewer({
       const pdfBlob = await generatePDFBlob(canvas);
       const fileName = getFileName("pdf");
       await saveFile(pdfBlob, fileName, "application/pdf");
-      alert(getSaveLocationMessage());
+      // No alert - the share sheet opens automatically
     } catch (error: any) {
       console.error("PDF Error:", error);
       alert(`Error: ${error.message || "Failed to generate PDF"}`);
@@ -354,7 +354,7 @@ export function LedgerViewer({
       if (!blob) throw new Error("Failed to create image");
       const fileName = getFileName("png");
       await saveFile(blob, fileName, "image/png");
-      alert(getSaveLocationMessage());
+      // No alert - the share sheet opens automatically
     } catch (error: any) {
       console.error("PNG Error:", error);
       alert(`Error: ${error.message || "Failed to generate PNG"}`);
