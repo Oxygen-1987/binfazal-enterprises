@@ -245,6 +245,41 @@ export function LedgerViewer({
     return canvas;
   };
 
+  // Generate PDF Blob from canvas
+  const generatePDFBlob = async (canvas: HTMLCanvasElement): Promise<Blob> => {
+    const { jsPDF } = await import("jspdf");
+
+    const pdf = new jsPDF({
+      orientation: "portrait",
+      unit: "mm",
+      format: "a4",
+    });
+
+    const pdfWidth = pdf.internal.pageSize.getWidth();
+    const pdfHeight = pdf.internal.pageSize.getHeight();
+
+    const imgRatio = canvas.width / canvas.height;
+    const pdfRatio = pdfWidth / pdfHeight;
+
+    let finalWidth = pdfWidth;
+    let finalHeight = pdfHeight;
+    let offsetX = 0;
+    let offsetY = 0;
+
+    if (imgRatio > pdfRatio) {
+      finalHeight = pdfWidth / imgRatio;
+      offsetY = (pdfHeight - finalHeight) / 2;
+    } else {
+      finalWidth = pdfHeight * imgRatio;
+      offsetX = (pdfWidth - finalWidth) / 2;
+    }
+
+    const imgData = canvas.toDataURL("image/png", 1.0);
+    pdf.addImage(imgData, "PNG", offsetX, offsetY, finalWidth, finalHeight);
+
+    return pdf.output("blob");
+  };
+
   const getFileName = (ext: string) => {
     const clientName = (
       client?.company_name || `${client?.first_name}_${client?.last_name}`
@@ -257,37 +292,7 @@ export function LedgerViewer({
     setDownloading(true);
     try {
       const canvas = await generateCanvas();
-      const { jsPDF } = await import("jspdf");
-
-      const pdf = new jsPDF({
-        orientation: "portrait",
-        unit: "mm",
-        format: "a4",
-      });
-
-      const pdfWidth = pdf.internal.pageSize.getWidth();
-      const pdfHeight = pdf.internal.pageSize.getHeight();
-
-      const imgRatio = canvas.width / canvas.height;
-      const pdfRatio = pdfWidth / pdfHeight;
-
-      let finalWidth = pdfWidth;
-      let finalHeight = pdfHeight;
-      let offsetX = 0;
-      let offsetY = 0;
-
-      if (imgRatio > pdfRatio) {
-        finalHeight = pdfWidth / imgRatio;
-        offsetY = (pdfHeight - finalHeight) / 2;
-      } else {
-        finalWidth = pdfHeight * imgRatio;
-        offsetX = (pdfWidth - finalWidth) / 2;
-      }
-
-      const imgData = canvas.toDataURL("image/png", 1.0);
-      pdf.addImage(imgData, "PNG", offsetX, offsetY, finalWidth, finalHeight);
-
-      const pdfBlob = pdf.output("blob");
+      const pdfBlob = await generatePDFBlob(canvas);
       const fileName = getFileName("pdf");
 
       await saveFile(pdfBlob, fileName, "application/pdf");
@@ -300,7 +305,6 @@ export function LedgerViewer({
     }
   };
 
-  // Replace handleDownloadPNG
   const handleDownloadPNG = async () => {
     setDownloadingPng(true);
     try {
@@ -323,69 +327,11 @@ export function LedgerViewer({
     }
   };
 
-  const handleDownloadPNG = async () => {
-    setDownloadingPng(true);
-    try {
-      const canvas = await generateCanvas();
-
-      canvas.toBlob(
-        (blob) => {
-          if (!blob) return;
-          const url = window.URL.createObjectURL(blob);
-          const a = document.createElement("a");
-          a.href = url;
-          a.download = getFileName("png");
-          document.body.appendChild(a);
-          a.click();
-          window.URL.revokeObjectURL(url);
-          document.body.removeChild(a);
-        },
-        "image/png",
-        1.0,
-      );
-    } catch (error) {
-      console.error("Error generating PNG:", error);
-      alert("Error generating PNG. Please try again.");
-    } finally {
-      setDownloadingPng(false);
-    }
-  };
-
   const handleShare = async () => {
     setSharing(true);
     try {
       const canvas = await generateCanvas();
-      const { jsPDF } = await import("jspdf");
-
-      const pdf = new jsPDF({
-        orientation: "portrait",
-        unit: "mm",
-        format: "a4",
-      });
-
-      const pdfWidth = pdf.internal.pageSize.getWidth();
-      const pdfHeight = pdf.internal.pageSize.getHeight();
-
-      const imgRatio = canvas.width / canvas.height;
-      const pdfRatio = pdfWidth / pdfHeight;
-
-      let finalWidth = pdfWidth;
-      let finalHeight = pdfHeight;
-      let offsetX = 0;
-      let offsetY = 0;
-
-      if (imgRatio > pdfRatio) {
-        finalHeight = pdfWidth / imgRatio;
-        offsetY = (pdfHeight - finalHeight) / 2;
-      } else {
-        finalWidth = pdfHeight * imgRatio;
-        offsetX = (pdfWidth - finalWidth) / 2;
-      }
-
-      const imgData = canvas.toDataURL("image/png", 1.0);
-      pdf.addImage(imgData, "PNG", offsetX, offsetY, finalWidth, finalHeight);
-
-      const pdfBlob = pdf.output("blob");
+      const pdfBlob = await generatePDFBlob(canvas);
       const fileName = getFileName("pdf");
       const clientName =
         client?.company_name || `${client?.first_name} ${client?.last_name}`;

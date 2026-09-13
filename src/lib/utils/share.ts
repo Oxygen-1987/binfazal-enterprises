@@ -1,12 +1,10 @@
 // src/lib/utils/share.ts
 import { Capacitor } from "@capacitor/core";
 
-// Check if running inside a native app (Capacitor)
 export function isNativeApp(): boolean {
   return Capacitor.isNativePlatform();
 }
 
-// Convert Blob to Base64 (required by Capacitor Filesystem)
 async function blobToBase64(blob: Blob): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -19,14 +17,12 @@ async function blobToBase64(blob: Blob): Promise<string> {
   });
 }
 
-// Save file to device
 export async function saveFile(
   blob: Blob,
   fileName: string,
   mimeType: string,
 ): Promise<void> {
   if (isNativeApp()) {
-    // NATIVE: Use Capacitor Filesystem
     const { Filesystem, Directory } = await import("@capacitor/filesystem");
     const base64Data = await blobToBase64(blob);
 
@@ -38,7 +34,6 @@ export async function saveFile(
         recursive: true,
       });
 
-      // On Android, also save to external Downloads for visibility
       if (Capacitor.getPlatform() === "android") {
         try {
           await Filesystem.writeFile({
@@ -48,7 +43,6 @@ export async function saveFile(
             recursive: true,
           });
         } catch (e) {
-          // External storage might not be available, ignore
           console.log("External storage not available");
         }
       }
@@ -58,7 +52,6 @@ export async function saveFile(
       throw error;
     }
   } else {
-    // WEB: Use standard download
     const url = window.URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
@@ -70,7 +63,6 @@ export async function saveFile(
   }
 }
 
-// Share file
 export async function shareFile(
   blob: Blob,
   fileName: string,
@@ -78,13 +70,11 @@ export async function shareFile(
   text?: string,
 ): Promise<boolean> {
   if (isNativeApp()) {
-    // NATIVE: Use Capacitor Filesystem + Share
     const { Filesystem, Directory } = await import("@capacitor/filesystem");
     const { Share } = await import("@capacitor/share");
     const base64Data = await blobToBase64(blob);
 
     try {
-      // Write to cache directory first
       const result = await Filesystem.writeFile({
         path: fileName,
         data: base64Data,
@@ -92,7 +82,6 @@ export async function shareFile(
         recursive: true,
       });
 
-      // Share the file
       await Share.share({
         title,
         text: text || title,
@@ -102,19 +91,16 @@ export async function shareFile(
       return true;
     } catch (error: any) {
       console.error("Error sharing file:", error);
-      // If sharing fails, try saving instead
       if (
         error.message?.includes("cancel") ||
         error.message?.includes("abort")
       ) {
         return false;
       }
-      // Fallback to save
       await saveFile(blob, fileName, blob.type);
       return false;
     }
   } else {
-    // WEB: Use Web Share API if available
     if (
       typeof navigator !== "undefined" &&
       navigator.share &&
@@ -135,7 +121,6 @@ export async function shareFile(
         console.error("Error sharing file:", error);
       }
     }
-    // Fallback: download
     await saveFile(blob, fileName, blob.type);
     return false;
   }
@@ -153,11 +138,10 @@ export function canShareFiles(): boolean {
   }
 }
 
-// Helper to alert user where file was saved (mobile)
 export function getSaveLocationMessage(): string {
   if (isNativeApp()) {
     if (Capacitor.getPlatform() === "android") {
-      return "File saved to Documents folder and Downloads";
+      return "File saved to Documents folder";
     } else if (Capacitor.getPlatform() === "ios") {
       return "File saved to Files app → On My iPhone → BinFazal";
     }
