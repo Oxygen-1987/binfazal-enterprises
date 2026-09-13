@@ -10,7 +10,6 @@ export async function blobToBase64(blob: Blob): Promise<string> {
     const reader = new FileReader();
     reader.onloadend = () => {
       const result = reader.result as string;
-      // Remove data URI prefix
       const base64 = result.includes(",") ? result.split(",")[1] : result;
       resolve(base64);
     };

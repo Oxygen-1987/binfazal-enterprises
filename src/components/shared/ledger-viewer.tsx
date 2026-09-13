@@ -9,25 +9,6 @@ import { Download, FileImage, Loader2, Share2 } from "lucide-react";
 import { formatCurrency, formatDate } from "@/lib/utils/format";
 import { shareFile, saveFile, getSaveLocationMessage } from "@/lib/utils/share";
 
-async function imageUrlToBase64(url: string): Promise<string> {
-  // If it's already a data URI, return as is
-  if (url.startsWith("data:")) return url;
-
-  try {
-    const response = await fetch(url);
-    const blob = await response.blob();
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onloadend = () => resolve(reader.result as string);
-      reader.onerror = reject;
-      reader.readAsDataURL(blob);
-    });
-  } catch (error) {
-    console.error("Failed to convert image to base64:", error);
-    return url; // Fallback to original URL
-  }
-}
-
 interface LedgerEntry {
   id: string;
   date: string;
@@ -59,6 +40,24 @@ interface LedgerViewerProps {
 const A4_WIDTH_PX = 794;
 const A4_HEIGHT_PX = 1123;
 
+async function imageUrlToBase64(url: string): Promise<string> {
+  if (url.startsWith("data:")) return url;
+
+  try {
+    const response = await fetch(url);
+    const blob = await response.blob();
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onloadend = () => resolve(reader.result as string);
+      reader.onerror = reject;
+      reader.readAsDataURL(blob);
+    });
+  } catch (error) {
+    console.error("Failed to convert image to base64:", error);
+    return url;
+  }
+}
+
 export function LedgerViewer({
   clientId,
   fromDate,
@@ -70,12 +69,12 @@ export function LedgerViewer({
   const [loading, setLoading] = useState(true);
   const [runningBalance, setRunningBalance] = useState(0);
   const [businessInfo, setBusinessInfo] = useState<BusinessInfo | null>(null);
+  const [templateBase64, setTemplateBase64] = useState<string>("");
   const [downloading, setDownloading] = useState(false);
   const [downloadingPng, setDownloadingPng] = useState(false);
   const [sharing, setSharing] = useState(false);
   const [statementPeriod, setStatementPeriod] = useState({ from: "", to: "" });
   const ledgerRef = useRef<HTMLDivElement>(null);
-  const [templateBase64, setTemplateBase64] = useState<string>("");
 
   useEffect(() => {
     fetchBusinessInfo();
@@ -93,12 +92,10 @@ export function LedgerViewer({
     if (data) {
       setBusinessInfo(data);
 
-      // Convert template to base64 (required for mobile PDF/JPG generation)
       if (data.ledger_template_url) {
         try {
           const base64 = await imageUrlToBase64(data.ledger_template_url);
           setTemplateBase64(base64);
-          console.log("Template converted to base64, length:", base64.length);
         } catch (err) {
           console.error("Failed to convert template to base64:", err);
         }
@@ -243,48 +240,37 @@ export function LedgerViewer({
     setLoading(false);
   };
 
-  // Generate canvas from ledger template
   const generateCanvas = async () => {
     const html2canvas = (await import("html2canvas")).default;
-    const element = ledgerRef.current;
 
-    if (!element) {
+    if (!templateBase64 && !businessInfo?.ledger_template_url) {
+      throw new Error("No template available");
+    }
+
+    const sourceElement = ledgerRef.current;
+    if (!sourceElement) {
       throw new Error("Ledger element not found");
     }
 
-    if (!templateBase64) {
-      throw new Error(
-        "Template not loaded. Please wait or re-upload template.",
-      );
-    }
+    const tempContainer = document.createElement("div");
+    tempContainer.style.position = "fixed";
+    tempContainer.style.left = "-10000px";
+    tempContainer.style.top = "0";
+    tempContainer.style.width = `${A4_WIDTH_PX}px`;
+    tempContainer.style.height = `${A4_HEIGHT_PX}px`;
+    tempContainer.style.zIndex = "-1";
+    tempContainer.style.backgroundColor = "#ffffff";
 
-    // Save original styles
-    const originalStyles = {
-      display: element.style.display,
-      position: element.style.position,
-      left: element.style.left,
-      top: element.style.top,
-      zIndex: element.style.zIndex,
-      opacity: element.style.opacity,
-    };
+    tempContainer.innerHTML = sourceElement.innerHTML;
+    document.body.appendChild(tempContainer);
 
-    // Position on-screen but invisible
-    element.style.display = "block";
-    element.style.position = "fixed";
-    element.style.left = "0";
-    element.style.top = "0";
-    element.style.zIndex = "-1";
-    element.style.opacity = "0";
-    element.style.pointerEvents = "none";
-
-    // Wait for render
-    await new Promise((resolve) => setTimeout(resolve, 500));
+    await new Promise((resolve) => setTimeout(resolve, 1000));
 
     try {
-      const canvas = await html2canvas(element, {
+      const canvas = await html2canvas(tempContainer, {
         scale: 2,
         useCORS: true,
-        allowTaint: false,
+        allowTaint: true,
         backgroundColor: "#ffffff",
         logging: false,
         width: A4_WIDTH_PX,
@@ -296,17 +282,10 @@ export function LedgerViewer({
 
       return canvas;
     } finally {
-      // Restore styles
-      element.style.display = originalStyles.display;
-      element.style.position = originalStyles.position;
-      element.style.left = originalStyles.left;
-      element.style.top = originalStyles.top;
-      element.style.zIndex = originalStyles.zIndex;
-      element.style.opacity = originalStyles.opacity;
-      element.style.pointerEvents = "";
+      document.body.removeChild(tempContainer);
     }
   };
-  // Generate PDF Blob from canvas
+
   const generatePDFBlob = async (canvas: HTMLCanvasElement): Promise<Blob> => {
     const { jsPDF } = await import("jspdf");
 
@@ -335,8 +314,8 @@ export function LedgerViewer({
       offsetX = (pdfWidth - finalWidth) / 2;
     }
 
-    const imgData = canvas.toDataURL("image/png", 1.0);
-    pdf.addImage(imgData, "PNG", offsetX, offsetY, finalWidth, finalHeight);
+    const imgData = canvas.toDataURL("image/jpeg", 0.95);
+    pdf.addImage(imgData, "JPEG", offsetX, offsetY, finalWidth, finalHeight);
 
     return pdf.output("blob");
   };
@@ -355,12 +334,11 @@ export function LedgerViewer({
       const canvas = await generateCanvas();
       const pdfBlob = await generatePDFBlob(canvas);
       const fileName = getFileName("pdf");
-
       await saveFile(pdfBlob, fileName, "application/pdf");
       alert(getSaveLocationMessage());
-    } catch (error) {
-      console.error("Error generating PDF:", error);
-      alert("Error generating PDF. Please try again.");
+    } catch (error: any) {
+      console.error("PDF Error:", error);
+      alert(`Error: ${error.message || "Failed to generate PDF"}`);
     } finally {
       setDownloading(false);
     }
@@ -370,19 +348,16 @@ export function LedgerViewer({
     setDownloadingPng(true);
     try {
       const canvas = await generateCanvas();
-
       const blob = await new Promise<Blob | null>((resolve) => {
         canvas.toBlob((b) => resolve(b), "image/png", 1.0);
       });
-
       if (!blob) throw new Error("Failed to create image");
-
       const fileName = getFileName("png");
       await saveFile(blob, fileName, "image/png");
       alert(getSaveLocationMessage());
-    } catch (error) {
-      console.error("Error generating PNG:", error);
-      alert("Error generating PNG. Please try again.");
+    } catch (error: any) {
+      console.error("PNG Error:", error);
+      alert(`Error: ${error.message || "Failed to generate PNG"}`);
     } finally {
       setDownloadingPng(false);
     }
@@ -401,9 +376,9 @@ export function LedgerViewer({
       }`;
 
       await shareFile(pdfBlob, fileName, "Client Ledger", shareText);
-    } catch (error) {
-      console.error("Error sharing:", error);
-      alert("Error sharing ledger. Please try again.");
+    } catch (error: any) {
+      console.error("Share Error:", error);
+      alert(`Error: ${error.message || "Failed to share"}`);
     } finally {
       setSharing(false);
     }
@@ -427,7 +402,7 @@ export function LedgerViewer({
     );
   }
 
-  const hasTemplate = !!businessInfo?.ledger_template_url && !!templateBase64;
+  const hasTemplate = !!businessInfo?.ledger_template_url;
 
   return (
     <div className="space-y-6">
@@ -609,201 +584,231 @@ export function LedgerViewer({
             style={{
               width: `${A4_WIDTH_PX}px`,
               height: `${A4_HEIGHT_PX}px`,
-              padding: "60px 45px 45px 45px",
-              backgroundImage: `url(${
-                templateBase64 || businessInfo?.ledger_template_url
-              })`,
-              backgroundSize: "100% 100%",
-              backgroundPosition: "top left",
-              backgroundRepeat: "no-repeat",
+              position: "relative",
               backgroundColor: "#ffffff",
               fontFamily: "Arial, sans-serif",
-              position: "relative",
               boxSizing: "border-box",
             }}
           >
+            <img
+              src={templateBase64 || businessInfo?.ledger_template_url}
+              alt=""
+              crossOrigin="anonymous"
+              style={{
+                position: "absolute",
+                top: 0,
+                left: 0,
+                width: `${A4_WIDTH_PX}px`,
+                height: `${A4_HEIGHT_PX}px`,
+                objectFit: "fill",
+                zIndex: 0,
+              }}
+            />
+
             <div
               style={{
-                marginTop: "170px",
-                marginBottom: "15px",
-                fontSize: "12px",
-                color: "#000",
+                position: "relative",
+                zIndex: 1,
+                padding: "60px 45px 45px 45px",
+                width: "100%",
+                height: "100%",
+                boxSizing: "border-box",
               }}
             >
-              <div style={{ display: "flex", justifyContent: "space-between" }}>
-                <div style={{ width: "55%" }}>
-                  <p style={{ margin: "3px 0" }}>
-                    <strong>Client:</strong>{" "}
-                    {client?.company_name ||
-                      `${client?.first_name} ${client?.last_name}`}
-                  </p>
-                  <p style={{ margin: "3px 0" }}>
-                    <strong>Mobile:</strong> {client?.mobile_number || "-"}
-                  </p>
-                </div>
-                <div style={{ width: "45%", textAlign: "right" }}>
-                  <p style={{ margin: "3px 0" }}>
-                    <strong>Statement Period:</strong>{" "}
-                    {statementPeriod.from
-                      ? `${formatDate(statementPeriod.from)} to ${formatDate(
-                          statementPeriod.to,
-                        )}`
-                      : "-"}
-                  </p>
-                  <p style={{ margin: "3px 0" }}>
-                    <strong>Date:</strong> {formatDate(new Date())}
-                  </p>
+              <div
+                style={{
+                  marginTop: "170px",
+                  marginBottom: "15px",
+                  fontSize: "12px",
+                  color: "#000",
+                }}
+              >
+                <div
+                  style={{ display: "flex", justifyContent: "space-between" }}
+                >
+                  <div style={{ width: "55%" }}>
+                    <p style={{ margin: "3px 0" }}>
+                      <strong>Client:</strong>{" "}
+                      {client?.company_name ||
+                        `${client?.first_name} ${client?.last_name}`}
+                    </p>
+                    <p style={{ margin: "3px 0" }}>
+                      <strong>Mobile:</strong> {client?.mobile_number || "-"}
+                    </p>
+                  </div>
+                  <div style={{ width: "45%", textAlign: "right" }}>
+                    <p style={{ margin: "3px 0" }}>
+                      <strong>Statement Period:</strong>{" "}
+                      {statementPeriod.from
+                        ? `${formatDate(statementPeriod.from)} to ${formatDate(
+                            statementPeriod.to,
+                          )}`
+                        : "-"}
+                    </p>
+                    <p style={{ margin: "3px 0" }}>
+                      <strong>Date:</strong> {formatDate(new Date())}
+                    </p>
+                  </div>
                 </div>
               </div>
-            </div>
 
-            <table
-              style={{
-                width: "100%",
-                borderCollapse: "collapse",
-                fontSize: "10px",
-                color: "#000",
-              }}
-            >
-              <thead>
-                <tr
-                  style={{
-                    borderTop: "2px solid #000",
-                    borderBottom: "2px solid #000",
-                  }}
-                >
-                  <th
+              <table
+                style={{
+                  width: "100%",
+                  borderCollapse: "collapse",
+                  fontSize: "10px",
+                  color: "#000",
+                }}
+              >
+                <thead>
+                  <tr
                     style={{
-                      textAlign: "left",
-                      padding: "5px 3px",
-                      fontWeight: "bold",
-                      width: "13%",
+                      borderTop: "2px solid #000",
+                      borderBottom: "2px solid #000",
                     }}
                   >
-                    Date
-                  </th>
-                  <th
-                    style={{
-                      textAlign: "left",
-                      padding: "5px 3px",
-                      fontWeight: "bold",
-                      width: "32%",
-                    }}
-                  >
-                    Description
-                  </th>
-                  <th
-                    style={{
-                      textAlign: "right",
-                      padding: "5px 3px",
-                      fontWeight: "bold",
-                      width: "10%",
-                    }}
-                  >
-                    Qty
-                  </th>
-                  <th
-                    style={{
-                      textAlign: "right",
-                      padding: "5px 3px",
-                      fontWeight: "bold",
-                      width: "10%",
-                    }}
-                  >
-                    Rate
-                  </th>
-                  <th
-                    style={{
-                      textAlign: "right",
-                      padding: "5px 3px",
-                      fontWeight: "bold",
-                      width: "12%",
-                    }}
-                  >
-                    Debit
-                  </th>
-                  <th
-                    style={{
-                      textAlign: "right",
-                      padding: "5px 3px",
-                      fontWeight: "bold",
-                      width: "11%",
-                    }}
-                  >
-                    Credit
-                  </th>
-                  <th
-                    style={{
-                      textAlign: "right",
-                      padding: "5px 3px",
-                      fontWeight: "bold",
-                      width: "12%",
-                    }}
-                  >
-                    Balance
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {entries.map((entry) => (
-                  <tr key={entry.id} style={{ borderBottom: "1px solid #ccc" }}>
-                    <td style={{ padding: "4px 3px", whiteSpace: "nowrap" }}>
-                      {formatDate(entry.date)}
-                    </td>
-                    <td style={{ padding: "4px 3px" }}>{entry.description}</td>
-                    <td style={{ textAlign: "right", padding: "4px 3px" }}>
-                      {entry.print_qty ? entry.print_qty.toLocaleString() : ""}
-                    </td>
-                    <td style={{ textAlign: "right", padding: "4px 3px" }}>
-                      {entry.rate ? entry.rate.toFixed(4) : ""}
-                    </td>
-                    <td style={{ textAlign: "right", padding: "4px 3px" }}>
-                      {entry.debit > 0 ? formatCurrency(entry.debit) : ""}
-                    </td>
-                    <td style={{ textAlign: "right", padding: "4px 3px" }}>
-                      {entry.credit > 0 ? formatCurrency(entry.credit) : ""}
-                    </td>
-                    <td
+                    <th
                       style={{
-                        textAlign: "right",
-                        padding: "4px 3px",
-                        fontWeight: 500,
+                        textAlign: "left",
+                        padding: "5px 3px",
+                        fontWeight: "bold",
+                        width: "13%",
                       }}
                     >
-                      {formatCurrency(entry.balance)}
-                    </td>
-                  </tr>
-                ))}
-                {entries.length < 18 &&
-                  Array.from({ length: 18 - entries.length }).map((_, i) => (
-                    <tr
-                      key={`empty-${i}`}
-                      style={{ borderBottom: "1px solid #eee" }}
+                      Date
+                    </th>
+                    <th
+                      style={{
+                        textAlign: "left",
+                        padding: "5px 3px",
+                        fontWeight: "bold",
+                        width: "32%",
+                      }}
                     >
-                      <td style={{ padding: "4px 3px" }}>&nbsp;</td>
-                      <td style={{ padding: "4px 3px" }}></td>
-                      <td style={{ padding: "4px 3px" }}></td>
-                      <td style={{ padding: "4px 3px" }}></td>
-                      <td style={{ padding: "4px 3px" }}></td>
-                      <td style={{ padding: "4px 3px" }}></td>
-                      <td style={{ padding: "4px 3px" }}></td>
+                      Description
+                    </th>
+                    <th
+                      style={{
+                        textAlign: "right",
+                        padding: "5px 3px",
+                        fontWeight: "bold",
+                        width: "10%",
+                      }}
+                    >
+                      Qty
+                    </th>
+                    <th
+                      style={{
+                        textAlign: "right",
+                        padding: "5px 3px",
+                        fontWeight: "bold",
+                        width: "10%",
+                      }}
+                    >
+                      Rate
+                    </th>
+                    <th
+                      style={{
+                        textAlign: "right",
+                        padding: "5px 3px",
+                        fontWeight: "bold",
+                        width: "12%",
+                      }}
+                    >
+                      Debit
+                    </th>
+                    <th
+                      style={{
+                        textAlign: "right",
+                        padding: "5px 3px",
+                        fontWeight: "bold",
+                        width: "11%",
+                      }}
+                    >
+                      Credit
+                    </th>
+                    <th
+                      style={{
+                        textAlign: "right",
+                        padding: "5px 3px",
+                        fontWeight: "bold",
+                        width: "12%",
+                      }}
+                    >
+                      Balance
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {entries.map((entry) => (
+                    <tr
+                      key={entry.id}
+                      style={{ borderBottom: "1px solid #ccc" }}
+                    >
+                      <td style={{ padding: "4px 3px", whiteSpace: "nowrap" }}>
+                        {formatDate(entry.date)}
+                      </td>
+                      <td style={{ padding: "4px 3px" }}>
+                        {entry.description}
+                      </td>
+                      <td style={{ textAlign: "right", padding: "4px 3px" }}>
+                        {entry.print_qty
+                          ? entry.print_qty.toLocaleString()
+                          : ""}
+                      </td>
+                      <td style={{ textAlign: "right", padding: "4px 3px" }}>
+                        {entry.rate ? entry.rate.toFixed(4) : ""}
+                      </td>
+                      <td style={{ textAlign: "right", padding: "4px 3px" }}>
+                        {entry.debit > 0 ? formatCurrency(entry.debit) : ""}
+                      </td>
+                      <td style={{ textAlign: "right", padding: "4px 3px" }}>
+                        {entry.credit > 0 ? formatCurrency(entry.credit) : ""}
+                      </td>
+                      <td
+                        style={{
+                          textAlign: "right",
+                          padding: "4px 3px",
+                          fontWeight: 500,
+                        }}
+                      >
+                        {formatCurrency(entry.balance)}
+                      </td>
                     </tr>
                   ))}
-              </tbody>
-              <tfoot>
-                <tr style={{ borderTop: "2px solid #000", fontWeight: "bold" }}>
-                  <td
-                    colSpan={6}
-                    style={{ padding: "8px 3px", textAlign: "right" }}
+                  {entries.length < 18 &&
+                    Array.from({ length: 18 - entries.length }).map((_, i) => (
+                      <tr
+                        key={`empty-${i}`}
+                        style={{ borderBottom: "1px solid #eee" }}
+                      >
+                        <td style={{ padding: "4px 3px" }}>&nbsp;</td>
+                        <td style={{ padding: "4px 3px" }}></td>
+                        <td style={{ padding: "4px 3px" }}></td>
+                        <td style={{ padding: "4px 3px" }}></td>
+                        <td style={{ padding: "4px 3px" }}></td>
+                        <td style={{ padding: "4px 3px" }}></td>
+                        <td style={{ padding: "4px 3px" }}></td>
+                      </tr>
+                    ))}
+                </tbody>
+                <tfoot>
+                  <tr
+                    style={{ borderTop: "2px solid #000", fontWeight: "bold" }}
                   >
-                    Closing Balance:
-                  </td>
-                  <td style={{ padding: "8px 3px", textAlign: "right" }}>
-                    {formatCurrency(runningBalance)}
-                  </td>
-                </tr>
-              </tfoot>
-            </table>
+                    <td
+                      colSpan={6}
+                      style={{ padding: "8px 3px", textAlign: "right" }}
+                    >
+                      Closing Balance:
+                    </td>
+                    <td style={{ padding: "8px 3px", textAlign: "right" }}>
+                      {formatCurrency(runningBalance)}
+                    </td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
           </div>
         </div>
       )}
