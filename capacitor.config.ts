@@ -7,12 +7,12 @@ const config: CapacitorConfig = {
   webDir: "public",
   server: {
     androidScheme: "https",
-    // Use your deployed URL for production
-    url: "https://binfazal-enterprises.vercel.app/", // Replace with your actual URL
-    cleartext: true,
+    url: "https://binfazal-enterprises.vercel.app",
+    cleartext: false, // Changed to false since we're using HTTPS
+    allowNavigation: ["binfazal-enterprises.vercel.app"],
   },
   android: {
-    allowMixedContent: true,
+    allowMixedContent: false, // Changed to false (HTTPS only)
   },
 };
 
