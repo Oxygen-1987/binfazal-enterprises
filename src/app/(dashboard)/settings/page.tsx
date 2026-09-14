@@ -51,6 +51,7 @@ interface UserRecord {
   joining_date?: string | null;
   cnic?: string | null;
   address?: string | null;
+  is_active?: boolean;
 }
 
 interface BusinessInfo {
@@ -310,45 +311,88 @@ export default function SettingsPage() {
     setSaving(true);
 
     try {
+      // Step 1: Sign up the user (creates auth.users record)
       const { data: authData, error: authError } = await supabase.auth.signUp({
         email: newUser.email,
         password: newUser.password,
+        options: {
+          data: {
+            full_name: newUser.full_name,
+            role: newUser.role,
+          },
+        },
       });
 
-      if (authError) throw authError;
+      if (authError) {
+        console.error("Signup error:", authError);
 
-      if (authData.user) {
-        // Insert into users table with all details
-        const { error: userError } = await supabase.from("users").insert({
-          id: authData.user.id,
-          email: newUser.email,
-          full_name: newUser.full_name,
-          role: newUser.role,
-          phone: newUser.role === "employee" ? newUser.phone || null : null,
-          designation:
-            newUser.role === "employee" ? newUser.designation || null : null,
-          joining_date:
-            newUser.role === "employee" ? newUser.joining_date || null : null,
-          cnic: newUser.role === "employee" ? newUser.cnic || null : null,
-          address: newUser.role === "employee" ? newUser.address || null : null,
-        });
+        // If already registered, try to find the existing user
+        if (
+          authError.message?.includes("already registered") ||
+          authError.message?.includes("already exists")
+        ) {
+          throw new Error(
+            "This email is already registered. Please use a different email.",
+          );
+        }
 
-        if (userError) throw userError;
-
-        fetchSettings();
-        setShowAddUser(false);
-        setNewUser({
-          email: "",
-          password: "",
-          full_name: "",
-          role: "employee",
-          phone: "",
-          designation: "",
-          joining_date: "",
-          cnic: "",
-          address: "",
-        });
+        throw authError;
       }
+
+      if (!authData.user) {
+        throw new Error(
+          "Signup failed - no user returned. Check Supabase email confirmation settings.",
+        );
+      }
+
+      // Step 2: Wait a moment for the auth record to fully propagate
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+
+      // Step 3: Insert into public.users
+      const { error: userError } = await supabase.from("users").insert({
+        id: authData.user.id,
+        email: newUser.email,
+        full_name: newUser.full_name,
+        role: newUser.role,
+        phone: newUser.role === "employee" ? newUser.phone || null : null,
+        designation:
+          newUser.role === "employee" ? newUser.designation || null : null,
+        joining_date:
+          newUser.role === "employee" ? newUser.joining_date || null : null,
+        cnic: newUser.role === "employee" ? newUser.cnic || null : null,
+        address: newUser.role === "employee" ? newUser.address || null : null,
+      });
+
+      if (userError) {
+        console.error("User insert error:", userError);
+
+        // If foreign key error, the auth record doesn't exist
+        if (userError.code === "23503") {
+          throw new Error(
+            "Auth user not created. Please check Supabase email confirmation is disabled.",
+          );
+        }
+
+        throw userError;
+      }
+
+      // Success!
+      fetchSettings();
+      setShowAddUser(false);
+      setNewUser({
+        email: "",
+        password: "",
+        full_name: "",
+        role: "employee",
+        phone: "",
+        designation: "",
+        joining_date: "",
+        cnic: "",
+        address: "",
+      });
+
+      setSuccessMessage("User added successfully!");
+      setTimeout(() => setSuccessMessage(""), 3000);
     } catch (error: any) {
       console.error("Error adding user:", error);
       alert(error.message);
@@ -357,18 +401,75 @@ export default function SettingsPage() {
     }
   };
 
+  const handleToggleUserActive = async (
+    userId: string,
+    currentStatus: boolean,
+  ) => {
+    if (userId === userProfile?.id) {
+      alert("You cannot deactivate your own account!");
+      return;
+    }
+
+    const action = currentStatus ? "deactivate" : "activate";
+    if (!confirm(`Are you sure you want to ${action} this user?`)) return;
+
+    try {
+      const { error } = await supabase
+        .from("users")
+        .update({ is_active: !currentStatus })
+        .eq("id", userId);
+
+      if (error) throw error;
+
+      setUsers(
+        users.map((u) =>
+          u.id === userId ? { ...u, is_active: !currentStatus } : u,
+        ),
+      );
+      setSuccessMessage(`User ${action}d successfully`);
+      setTimeout(() => setSuccessMessage(""), 3000);
+    } catch (err: any) {
+      alert(`Error: ${err.message}`);
+    }
+  };
+
+  // Delete user
   const handleDeleteUser = async (userId: string) => {
     if (userId === userProfile?.id) {
       alert("You cannot delete your own account!");
       return;
     }
 
-    if (confirm("Are you sure you want to delete this user?")) {
+    if (
+      !confirm(
+        "Are you sure you want to delete this user? They will lose access to the system.",
+      )
+    ) {
+      return;
+    }
+
+    try {
       const { error } = await supabase.from("users").delete().eq("id", userId);
 
-      if (!error) {
-        setUsers(users.filter((u) => u.id !== userId));
+      if (error) {
+        console.error("Delete error:", error);
+
+        if (error.code === "23503") {
+          alert(
+            "This user has created records in the system. Their records will be kept, but they will be removed from the users list.",
+          );
+          return;
+        }
+
+        throw error;
       }
+
+      setUsers(users.filter((u) => u.id !== userId));
+      setSuccessMessage("User removed successfully");
+      setTimeout(() => setSuccessMessage(""), 3000);
+    } catch (err: any) {
+      console.error("Error deleting user:", err);
+      alert(`Error: ${err.message || "Failed to delete user"}`);
     }
   };
 
@@ -1096,7 +1197,7 @@ export default function SettingsPage() {
                       </p>
                     </div>
                   </div>
-                  <div className="flex items-center space-x-3 flex-shrink-0">
+                  <div className="flex items-center space-x-2 flex-shrink-0">
                     <span
                       className={`text-xs px-2 py-1 rounded-full ${
                         userRecord.role === "owner"
@@ -1106,15 +1207,41 @@ export default function SettingsPage() {
                     >
                       {userRecord.role}
                     </span>
+                    {userRecord.is_active === false && (
+                      <span className="text-xs px-2 py-1 rounded-full bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-300">
+                        Inactive
+                      </span>
+                    )}
                     {userRecord.id !== userProfile?.id && (
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="text-red-500"
-                        onClick={() => handleDeleteUser(userRecord.id)}
-                      >
-                        Delete
-                      </Button>
+                      <>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className={
+                            userRecord.is_active === false
+                              ? "text-green-600"
+                              : "text-orange-500"
+                          }
+                          onClick={() =>
+                            handleToggleUserActive(
+                              userRecord.id,
+                              userRecord.is_active !== false,
+                            )
+                          }
+                        >
+                          {userRecord.is_active === false
+                            ? "Activate"
+                            : "Deactivate"}
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="text-red-500"
+                          onClick={() => handleDeleteUser(userRecord.id)}
+                        >
+                          Delete
+                        </Button>
+                      </>
                     )}
                   </div>
                 </div>

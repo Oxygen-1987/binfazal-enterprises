@@ -19,7 +19,8 @@ import {
   Mail,
   Phone,
   Briefcase,
-  Calendar as CalendarIcon,
+  Pencil,
+  Save,
 } from "lucide-react";
 
 export function UserMenu() {
@@ -28,6 +29,14 @@ export function UserMenu() {
   const [showProfileModal, setShowProfileModal] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [successMessage, setSuccessMessage] = useState("");
+  const [isEditing, setIsEditing] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [editData, setEditData] = useState({
+    full_name: "",
+    phone: "",
+    designation: "",
+    address: "",
+  });
   const dropdownRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -43,6 +52,18 @@ export function UserMenu() {
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
+
+  // Sync edit data when userProfile changes
+  useEffect(() => {
+    if (userProfile) {
+      setEditData({
+        full_name: userProfile.full_name || "",
+        phone: userProfile.phone || "",
+        designation: userProfile.designation || "",
+        address: userProfile.address || "",
+      });
+    }
+  }, [userProfile]);
 
   const getInitials = (name: string) => {
     if (!name) return "?";
@@ -145,10 +166,68 @@ export function UserMenu() {
     }
   };
 
+  const handleSaveProfile = async () => {
+    if (!userProfile) return;
+
+    if (!editData.full_name.trim()) {
+      alert("Full name is required");
+      return;
+    }
+
+    setSaving(true);
+    try {
+      const updates: any = {
+        full_name: editData.full_name.trim(),
+        phone: editData.phone.trim() || null,
+        address: editData.address.trim() || null,
+      };
+
+      // Only employees have designation
+      if (userProfile.role === "employee") {
+        updates.designation = editData.designation.trim() || null;
+      }
+
+      const { error } = await supabase
+        .from("users")
+        .update(updates)
+        .eq("id", userProfile.id);
+
+      if (error) throw error;
+
+      await refreshProfile();
+      setSuccessMessage("Profile updated!");
+      setIsEditing(false);
+      setTimeout(() => setSuccessMessage(""), 2000);
+    } catch (error: any) {
+      console.error("Error updating profile:", error);
+      alert("Error updating profile: " + error.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleCancelEdit = () => {
+    if (userProfile) {
+      setEditData({
+        full_name: userProfile.full_name || "",
+        phone: userProfile.phone || "",
+        designation: userProfile.designation || "",
+        address: userProfile.address || "",
+      });
+    }
+    setIsEditing(false);
+  };
+
   const handleLogout = async () => {
     if (confirm("Are you sure you want to logout?")) {
       await signOut();
     }
+  };
+
+  const closeModal = () => {
+    setShowProfileModal(false);
+    setIsEditing(false);
+    setSuccessMessage("");
   };
 
   if (!userProfile) {
@@ -186,15 +265,14 @@ export function UserMenu() {
               {userProfile.full_name}
             </p>
             <p className="text-xs text-gray-500 capitalize">
-              {userProfile.role}
+              {userProfile.designation || userProfile.role}
             </p>
           </div>
         </button>
 
-        {/* Dropdown Menu */}
+        {/* Dropdown */}
         {isOpen && (
           <div className="absolute right-0 mt-2 w-72 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-xl shadow-lg overflow-hidden z-50">
-            {/* User Info Header */}
             <div className="p-4 bg-gradient-to-br from-orange-50 to-orange-100 dark:from-orange-900/20 dark:to-orange-800/10 border-b border-gray-200 dark:border-gray-800">
               <div className="flex items-center space-x-3">
                 {userProfile.avatar_url ? (
@@ -212,16 +290,9 @@ export function UserMenu() {
                   <p className="font-semibold truncate">
                     {userProfile.full_name}
                   </p>
-                  {userProfile.designation &&
-                  userProfile.role === "employee" ? (
-                    <p className="text-xs text-gray-600 dark:text-gray-400 truncate">
-                      {userProfile.designation}
-                    </p>
-                  ) : (
-                    <p className="text-xs text-gray-500 truncate">
-                      {userProfile.email}
-                    </p>
-                  )}
+                  <p className="text-xs text-gray-500 truncate">
+                    {userProfile.email}
+                  </p>
                   <span
                     className={`inline-flex items-center text-xs mt-1 px-2 py-0.5 rounded-full ${
                       userProfile.role === "owner"
@@ -230,13 +301,14 @@ export function UserMenu() {
                     }`}
                   >
                     <Shield className="h-3 w-3 mr-1" />
-                    {userProfile.role === "owner" ? "Owner" : "Employee"}
+                    {userProfile.role === "owner"
+                      ? "Owner"
+                      : userProfile.designation || "Employee"}
                   </span>
                 </div>
               </div>
             </div>
 
-            {/* Menu Items */}
             <div className="p-1">
               <button
                 onClick={() => {
@@ -245,8 +317,20 @@ export function UserMenu() {
                 }}
                 className="w-full flex items-center space-x-3 px-3 py-2.5 text-sm rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
               >
-                <Camera className="h-4 w-4 text-gray-500" />
-                <span>Change Avatar</span>
+                <UserIcon className="h-4 w-4 text-gray-500" />
+                <span>My Profile</span>
+              </button>
+
+              <button
+                onClick={() => {
+                  setShowProfileModal(true);
+                  setIsEditing(true);
+                  setIsOpen(false);
+                }}
+                className="w-full flex items-center space-x-3 px-3 py-2.5 text-sm rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+              >
+                <Pencil className="h-4 w-4 text-gray-500" />
+                <span>Edit Profile</span>
               </button>
 
               <button
@@ -263,16 +347,15 @@ export function UserMenu() {
 
       {/* Profile Modal */}
       {showProfileModal && (
-        <div className="fixed inset-0 z-[100] bg-black/60 flex items-center justify-center p-4">
-          <Card className="w-full max-w-md">
-            <CardContent className="p-6">
+        <div className="fixed inset-0 z-[100] bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
+          {" "}
+          <Card className="w-full max-w-md my-8 bg-white dark:bg-gray-900 shadow-2xl border border-gray-200 dark:border-gray-800">
+            <CardContent className="p-6 bg-white dark:bg-gray-900">
               <div className="flex items-center justify-between mb-6">
-                <h2 className="text-lg font-bold">Profile Settings</h2>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={() => setShowProfileModal(false)}
-                >
+                <h2 className="text-lg font-bold">
+                  {isEditing ? "Edit Profile" : "My Profile"}
+                </h2>
+                <Button variant="ghost" size="icon" onClick={closeModal}>
                   <X className="h-5 w-5" />
                 </Button>
               </div>
@@ -284,7 +367,7 @@ export function UserMenu() {
                 </div>
               )}
 
-              {/* Avatar Section */}
+              {/* Avatar */}
               <div className="flex flex-col items-center mb-6">
                 <div className="relative">
                   {userProfile.avatar_url ? (
@@ -318,7 +401,7 @@ export function UserMenu() {
                   />
                 </div>
                 <p className="text-xs text-gray-500 mt-2">
-                  Click camera icon to upload (max 2MB)
+                  Click camera to upload (max 2MB)
                 </p>
                 {userProfile.avatar_url && (
                   <Button
@@ -333,61 +416,184 @@ export function UserMenu() {
                 )}
               </div>
 
-              {/* Info Display */}
-              <div className="space-y-3 pt-4 border-t border-gray-200 dark:border-gray-700">
-                <div className="flex items-center space-x-3 text-sm">
-                  <UserIcon className="h-4 w-4 text-gray-400" />
-                  <div>
-                    <p className="text-xs text-gray-500">Full Name</p>
-                    <p className="font-medium">{userProfile.full_name}</p>
+              {/* View Mode */}
+              {!isEditing ? (
+                <div className="space-y-3 pt-4 border-t border-gray-200 dark:border-gray-700">
+                  <div className="flex items-center space-x-3 text-sm">
+                    <UserIcon className="h-4 w-4 text-gray-400" />
+                    <div className="flex-1">
+                      <p className="text-xs text-gray-500">Full Name</p>
+                      <p className="font-medium">{userProfile.full_name}</p>
+                    </div>
                   </div>
-                </div>
-                <div className="flex items-center space-x-3 text-sm">
-                  <Mail className="h-4 w-4 text-gray-400" />
-                  <div>
-                    <p className="text-xs text-gray-500">Email</p>
-                    <p className="font-medium">{userProfile.email}</p>
+                  <div className="flex items-center space-x-3 text-sm">
+                    <Mail className="h-4 w-4 text-gray-400" />
+                    <div className="flex-1">
+                      <p className="text-xs text-gray-500">Email</p>
+                      <p className="font-medium">{userProfile.email}</p>
+                    </div>
                   </div>
-                </div>
-                <div className="flex items-center space-x-3 text-sm">
-                  <Shield className="h-4 w-4 text-gray-400" />
-                  <div>
-                    <p className="text-xs text-gray-500">Role</p>
-                    <p className="font-medium capitalize">{userProfile.role}</p>
+                  <div className="flex items-center space-x-3 text-sm">
+                    <Shield className="h-4 w-4 text-gray-400" />
+                    <div className="flex-1">
+                      <p className="text-xs text-gray-500">Role</p>
+                      <p className="font-medium capitalize">
+                        {userProfile.role}
+                      </p>
+                    </div>
                   </div>
-                </div>
-              </div>
+                  {userProfile.designation && (
+                    <div className="flex items-center space-x-3 text-sm">
+                      <Briefcase className="h-4 w-4 text-gray-400" />
+                      <div className="flex-1">
+                        <p className="text-xs text-gray-500">Designation</p>
+                        <p className="font-medium">{userProfile.designation}</p>
+                      </div>
+                    </div>
+                  )}
+                  {userProfile.phone && (
+                    <div className="flex items-center space-x-3 text-sm">
+                      <Phone className="h-4 w-4 text-gray-400" />
+                      <div className="flex-1">
+                        <p className="text-xs text-gray-500">Phone</p>
+                        <p className="font-medium">{userProfile.phone}</p>
+                      </div>
+                    </div>
+                  )}
+                  {userProfile.address && (
+                    <div className="flex items-start space-x-3 text-sm pt-2">
+                      <UserIcon className="h-4 w-4 text-gray-400 mt-1" />
+                      <div className="flex-1">
+                        <p className="text-xs text-gray-500">Address</p>
+                        <p className="font-medium">{userProfile.address}</p>
+                      </div>
+                    </div>
+                  )}
 
-              {/* Employee Details */}
-              {userProfile.role === "employee" && userProfile.designation && (
-                <div className="flex items-center space-x-3 text-sm">
-                  <Briefcase className="h-4 w-4 text-gray-400" />
-                  <div>
-                    <p className="text-xs text-gray-500">Designation</p>
-                    <p className="font-medium">{userProfile.designation}</p>
+                  <div className="pt-4">
+                    <Button
+                      onClick={() => setIsEditing(true)}
+                      className="w-full"
+                    >
+                      <Pencil className="mr-2 h-4 w-4" />
+                      Edit Profile
+                    </Button>
+                  </div>
+                </div>
+              ) : (
+                /* Edit Mode */
+                <div className="space-y-4 pt-4 border-t border-gray-200 dark:border-gray-700">
+                  <div className="space-y-2">
+                    <Label htmlFor="full_name">Full Name *</Label>
+                    <Input
+                      id="full_name"
+                      value={editData.full_name}
+                      onChange={(e) =>
+                        setEditData((prev) => ({
+                          ...prev,
+                          full_name: e.target.value,
+                        }))
+                      }
+                      placeholder="Enter your full name"
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="email">Email (cannot be changed)</Label>
+                    <Input
+                      id="email"
+                      value={userProfile.email}
+                      disabled
+                      className="bg-gray-100 dark:bg-gray-800"
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="phone">Phone Number</Label>
+                    <Input
+                      id="phone"
+                      type="tel"
+                      value={editData.phone}
+                      onChange={(e) =>
+                        setEditData((prev) => ({
+                          ...prev,
+                          phone: e.target.value,
+                        }))
+                      }
+                      placeholder="0300-1234567"
+                    />
+                  </div>
+
+                  {userProfile.role === "employee" && (
+                    <div className="space-y-2">
+                      <Label htmlFor="designation">Designation</Label>
+                      <Input
+                        id="designation"
+                        value={editData.designation}
+                        onChange={(e) =>
+                          setEditData((prev) => ({
+                            ...prev,
+                            designation: e.target.value,
+                          }))
+                        }
+                        placeholder="e.g., Machine Operator"
+                      />
+                    </div>
+                  )}
+
+                  <div className="space-y-2">
+                    <Label htmlFor="address">Address</Label>
+                    <Input
+                      id="address"
+                      value={editData.address}
+                      onChange={(e) =>
+                        setEditData((prev) => ({
+                          ...prev,
+                          address: e.target.value,
+                        }))
+                      }
+                      placeholder="Enter your address"
+                    />
+                  </div>
+
+                  <div className="flex space-x-3 pt-2">
+                    <Button
+                      variant="outline"
+                      onClick={handleCancelEdit}
+                      disabled={saving}
+                      className="flex-1"
+                    >
+                      <X className="mr-2 h-4 w-4" />
+                      Cancel
+                    </Button>
+                    <Button
+                      onClick={handleSaveProfile}
+                      disabled={saving}
+                      className="flex-1"
+                    >
+                      {saving ? (
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      ) : (
+                        <Save className="mr-2 h-4 w-4" />
+                      )}
+                      {saving ? "Saving..." : "Save"}
+                    </Button>
                   </div>
                 </div>
               )}
-              {userProfile.role === "employee" && userProfile.phone && (
-                <div className="flex items-center space-x-3 text-sm">
-                  <Phone className="h-4 w-4 text-gray-400" />
-                  <div>
-                    <p className="text-xs text-gray-500">Phone</p>
-                    <p className="font-medium">{userProfile.phone}</p>
-                  </div>
+
+              {!isEditing && (
+                <div className="mt-6 pt-4 border-t border-gray-200 dark:border-gray-700">
+                  <Button
+                    variant="outline"
+                    className="w-full text-red-500 border-red-200 hover:bg-red-50"
+                    onClick={handleLogout}
+                  >
+                    <LogOut className="mr-2 h-4 w-4" />
+                    Logout
+                  </Button>
                 </div>
               )}
-
-              <div className="mt-6 pt-4 border-t border-gray-200 dark:border-gray-700">
-                <Button
-                  variant="outline"
-                  className="w-full text-red-500 border-red-200 hover:bg-red-50"
-                  onClick={handleLogout}
-                >
-                  <LogOut className="mr-2 h-4 w-4" />
-                  Logout
-                </Button>
-              </div>
             </CardContent>
           </Card>
         </div>

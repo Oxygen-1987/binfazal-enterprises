@@ -17,6 +17,7 @@ interface UserProfile {
   joining_date: string | null;
   cnic: string | null;
   address: string | null;
+  is_active: boolean;
 }
 
 interface AuthContextType {
@@ -73,7 +74,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const { data, error } = await supabase
       .from("users")
       .select(
-        "id, email, full_name, role, avatar_url, phone, designation, joining_date, cnic, address",
+        "id, email, full_name, role, avatar_url, phone, designation, joining_date, cnic, address, is_active",
       )
       .eq("id", userId)
       .maybeSingle();
@@ -83,8 +84,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
 
     if (data) {
+      if (data.is_active === false) {
+        await supabase.auth.signOut();
+        setUserProfile(null);
+        alert("Your account has been deactivated. Please contact the owner.");
+        return;
+      }
       setUserProfile(data);
     } else {
+      // Create fallback profile
       const {
         data: { user },
       } = await supabase.auth.getUser();
@@ -103,6 +111,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           joining_date: null,
           cnic: null,
           address: null,
+          is_active: true,
         });
       }
     }
