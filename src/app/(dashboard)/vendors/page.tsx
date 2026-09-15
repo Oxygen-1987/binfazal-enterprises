@@ -7,6 +7,8 @@ import { supabase } from "@/lib/supabase/client";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { EmptyState } from "@/components/shared/empty-state";
+import { CardListSkeleton } from "@/components/shared/skeletons";
 import {
   Plus,
   Search,
@@ -162,21 +164,24 @@ export default function VendorsPage() {
 
       {/* Vendors List */}
       {loading ? (
-        <div className="flex justify-center py-12">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#FF6B00]" />
-        </div>
+        <CardListSkeleton count={5} />
       ) : filteredVendors.length === 0 ? (
-        <Card>
-          <CardContent className="flex flex-col items-center justify-center py-12">
-            <Users className="h-12 w-12 text-gray-400 mb-4" />
-            <p className="text-gray-500 text-lg">No vendors found</p>
-            <p className="text-gray-400 text-sm mt-2">
-              {searchTerm
-                ? "Try different search terms"
-                : "Add your first vendor"}
-            </p>
-          </CardContent>
-        </Card>
+        searchTerm ? (
+          <EmptyState
+            icon={Search}
+            title="No vendors match your search"
+            description={`We couldn't find any vendors matching "${searchTerm}".`}
+            variant="search"
+          />
+        ) : (
+          <EmptyState
+            icon={Users}
+            title="No vendors yet"
+            description="Add your first vendor to get started. Vendors will appear here with their contact details and balance."
+            actionLabel="Add New Vendor"
+            actionHref="/vendors/new"
+          />
+        )
       ) : (
         <div className="space-y-3">
           {filteredVendors.map((vendor) => (

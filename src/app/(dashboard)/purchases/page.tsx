@@ -7,6 +7,8 @@ import { supabase } from "@/lib/supabase/client";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { EmptyState } from "@/components/shared/empty-state";
+import { ListSkeleton, CardListSkeleton } from "@/components/shared/skeletons";
 import {
   Plus,
   Search,
@@ -287,21 +289,30 @@ export default function PurchasesPage() {
 
       {/* Purchases Display */}
       {loading ? (
-        <div className="flex justify-center py-12">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#FF6B00]" />
-        </div>
+        viewMode === "list" ? (
+          <ListSkeleton rows={10} />
+        ) : (
+          <CardListSkeleton count={5} />
+        )
       ) : filteredPurchases.length === 0 ? (
-        <Card>
-          <CardContent className="flex flex-col items-center justify-center py-12">
-            <ShoppingCart className="h-12 w-12 text-gray-400 mb-4" />
-            <p className="text-gray-500 text-lg">No purchases found</p>
-            <p className="text-gray-400 text-sm mt-2">
-              {searchTerm || statusFilter !== "all"
-                ? "Try different filters"
-                : "No purchases in this period"}
-            </p>
-          </CardContent>
-        </Card>
+        searchTerm || statusFilter !== "all" ? (
+          <EmptyState
+            icon={Search}
+            title="No purchases match your search"
+            description={`We couldn't find any purchases matching "${
+              searchTerm || statusFilter
+            }".`}
+            variant="search"
+          />
+        ) : (
+          <EmptyState
+            icon={ShoppingCart}
+            title="No purchases yet"
+            description="Add your first purchase to get started. Purchases will appear here with their vendor and payment status."
+            actionLabel="New Purchase"
+            actionHref="/purchases/new"
+          />
+        )
       ) : viewMode === "list" ? (
         /* LIST VIEW */
         <Card className="overflow-hidden">

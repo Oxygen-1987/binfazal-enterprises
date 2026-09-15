@@ -4,6 +4,7 @@
 import { useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAuth } from '@/context/auth-context'
+import { LoadingSpinner } from '@/components/shared/loading-spinner'
 
 export default function HomePage() {
   const router = useRouter()
@@ -19,7 +20,7 @@ export default function HomePage() {
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-white dark:bg-black">
-      <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#FF6B00]" />
+      <LoadingSpinner page />
     </div>
   )
 }

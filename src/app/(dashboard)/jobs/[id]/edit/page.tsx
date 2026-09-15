@@ -4,6 +4,7 @@
 import { useEffect, useState } from "react";
 import { useRouter, useParams } from "next/navigation";
 import { useAuth } from "@/context/auth-context";
+import { LoadingSpinner } from "@/components/shared/loading-spinner";
 import { supabase } from "@/lib/supabase/client";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -237,7 +238,7 @@ export default function EditJobPage() {
   if (loading) {
     return (
       <div className="flex justify-center py-12">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#FF6B00]" />
+        <LoadingSpinner page />
       </div>
     );
   }

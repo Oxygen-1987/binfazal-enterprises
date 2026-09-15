@@ -4,6 +4,8 @@
 import { useEffect, useState, useRef } from "react";
 import { supabase } from "@/lib/supabase/client";
 import { Card, CardContent } from "@/components/ui/card";
+import { LedgerSkeleton } from "@/components/shared/skeletons";
+import { showToast } from "@/lib/utils/toast";
 import { Button } from "@/components/ui/button";
 import {
   Download,
@@ -13,7 +15,13 @@ import {
   AlertCircle,
 } from "lucide-react";
 import { formatCurrency, formatDate } from "@/lib/utils/format";
-import { shareFile, saveFile, getSaveLocationMessage } from "@/lib/utils/share";
+import {
+  shareFile,
+  saveFile,
+  getSaveLocationMessage,
+  isNativeApp,
+} from "@/lib/utils/share";
+import { getErrorMessage } from "@/lib/utils/errors";
 import {
   hasAllFilesPermission,
   openAllFilesSettings,
@@ -354,10 +362,15 @@ export function LedgerViewer({
       const pdfBlob = await generatePDFBlob(canvas);
       const fileName = getFileName("pdf");
       await saveFile(pdfBlob, fileName, "application/pdf");
-      // Share sheet opens automatically - no alert needed
+
+      if (isNativeApp()) {
+        showToast.success("PDF ready", "Choose where to save it");
+      } else {
+        showToast.success("PDF downloaded");
+      }
     } catch (error: any) {
       console.error("PDF Error:", error);
-      alert(`Error: ${error.message || "Failed to generate PDF"}`);
+      showToast.error("Failed to generate PDF", getErrorMessage(error));
     } finally {
       setDownloading(false);
     }
@@ -373,10 +386,15 @@ export function LedgerViewer({
       if (!blob) throw new Error("Failed to create image");
       const fileName = getFileName("png");
       await saveFile(blob, fileName, "image/png");
-      // Share sheet opens automatically - no alert needed
+
+      if (isNativeApp()) {
+        showToast.success("Image ready", "Choose where to save it");
+      } else {
+        showToast.success("Image downloaded");
+      }
     } catch (error: any) {
       console.error("PNG Error:", error);
-      alert(`Error: ${error.message || "Failed to generate PNG"}`);
+      showToast.error("Failed to generate image", getErrorMessage(error));
     } finally {
       setDownloadingPng(false);
     }
@@ -395,20 +413,17 @@ export function LedgerViewer({
       }`;
 
       await shareFile(pdfBlob, fileName, "Client Ledger", shareText);
+      showToast.success("Shared successfully");
     } catch (error: any) {
       console.error("Share Error:", error);
-      alert(`Share failed: ${error.message || "Unknown error"}`);
+      showToast.error("Failed to share", getErrorMessage(error));
     } finally {
       setSharing(false);
     }
   };
 
   if (loading) {
-    return (
-      <div className="flex justify-center py-12">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#FF6B00]" />
-      </div>
-    );
+    return <LedgerSkeleton />;
   }
 
   if (!client) {

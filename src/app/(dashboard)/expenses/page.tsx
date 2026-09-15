@@ -7,6 +7,8 @@ import { supabase } from "@/lib/supabase/client";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { EmptyState } from "@/components/shared/empty-state";
+import { ListSkeleton, CardListSkeleton } from "@/components/shared/skeletons";
 import {
   Plus,
   Search,
@@ -270,21 +272,30 @@ export default function ExpensesPage() {
 
       {/* Expenses Display */}
       {loading ? (
-        <div className="flex justify-center py-12">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#FF6B00]" />
-        </div>
+        viewMode === "list" ? (
+          <ListSkeleton rows={10} />
+        ) : (
+          <CardListSkeleton count={5} />
+        )
       ) : filteredExpenses.length === 0 ? (
-        <Card>
-          <CardContent className="flex flex-col items-center justify-center py-12">
-            <Receipt className="h-12 w-12 text-gray-400 mb-4" />
-            <p className="text-gray-500 text-lg">No expenses found</p>
-            <p className="text-gray-400 text-sm mt-2">
-              {searchTerm || categoryFilter !== "all"
-                ? "Try different filters"
-                : "No expenses in this period"}
-            </p>
-          </CardContent>
-        </Card>
+        searchTerm || categoryFilter !== "all" ? (
+          <EmptyState
+            icon={Search}
+            title="No expenses match your search"
+            description={`We couldn't find any expenses matching "${
+              searchTerm || categoryFilter
+            }".`}
+            variant="search"
+          />
+        ) : (
+          <EmptyState
+            icon={Receipt}
+            title="No expenses yet"
+            description="Add your first expense to get started. Expenses will appear here with their category, date and amount."
+            actionLabel="Add Expense"
+            actionHref="/expenses/new"
+          />
+        )
       ) : viewMode === "list" ? (
         /* LIST VIEW */
         <Card className="overflow-hidden">

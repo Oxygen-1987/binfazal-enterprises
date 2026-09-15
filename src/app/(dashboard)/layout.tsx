@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation'
 import { useAuth } from '@/context/auth-context'
 import { BottomNav } from '@/components/layout/bottom-nav'
 import { TopBar } from '@/components/layout/top-bar'
+import { LoadingSpinner } from '@/components/shared/loading-spinner'
 
 export default function DashboardLayout({
   children,
@@ -24,7 +25,7 @@ export default function DashboardLayout({
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-white dark:bg-black">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#FF6B00]" />
+        <LoadingSpinner page />
       </div>
     )
   }

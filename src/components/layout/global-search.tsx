@@ -15,6 +15,7 @@ import {
   Loader2,
 } from "lucide-react";
 import { formatCurrency } from "@/lib/utils/format";
+import { LoadingSpinner } from "@/components/shared/loading-spinner";
 
 interface SearchResult {
   id: string;
@@ -279,7 +280,7 @@ export function GlobalSearch() {
         <div className="absolute top-full left-0 right-0 mt-2 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-xl shadow-xl overflow-hidden z-50 max-h-[400px] overflow-y-auto">
           {loading ? (
             <div className="p-4 text-center text-sm text-gray-500">
-              <Loader2 className="h-5 w-5 animate-spin mx-auto mb-2" />
+              <LoadingSpinner inline />
               Searching...
             </div>
           ) : results.length === 0 ? (

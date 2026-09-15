@@ -6,6 +6,7 @@ import { useAuth } from "@/context/auth-context";
 import { supabase } from "@/lib/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { StatsSkeleton } from "@/components/shared/skeletons";
 import {
   Plus,
   Printer,
@@ -287,11 +288,7 @@ export default function DashboardPage() {
   };
 
   if (loading) {
-    return (
-      <div className="flex justify-center py-12">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#FF6B00]" />
-      </div>
-    );
+    return <StatsSkeleton />;
   }
 
   return (

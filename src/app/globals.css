@@ -56,3 +56,137 @@
     color: var(--foreground);
   }
 }
+
+/* ─────────────────────────────────────────────────────────────
+   App loading spinner — four equal dots orbiting in a circle
+   (2 green + 2 orange). Adapted from the QuickBooks-style spinner:
+   .spinner > .spinner-wrapper > .spinner-dot > svg > circle
+   Rendered by src/components/shared/loading-spinner.tsx
+   ───────────────────────────────────────────────────────────── */
+.spinner {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  background: #ffffff;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  z-index: 20010;
+}
+
+.dark .spinner {
+  background: #000000;
+}
+
+/* Larger variant used by the route-level loading files
+   (app/loading.tsx, app/(dashboard)/loading.tsx). */
+.page-spinner {
+  --spinner-size: 60px;
+}
+
+/* Inline variant — no full-screen overlay, for small in-page spots. */
+.spinner-inline {
+  position: relative;
+  top: auto;
+  left: auto;
+  width: auto;
+  height: auto;
+  background: transparent;
+  z-index: auto;
+  --spinner-size: 20px;
+}
+
+.spinner-wrapper {
+  position: relative;
+  width: var(--spinner-size, 50px);
+  height: var(--spinner-size, 50px);
+  animation: spinner-rotate 1.4s linear infinite;
+}
+
+.spinner-dot {
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  animation: spinner-bounce 1.4s cubic-bezier(0.46, 0.03, 0.52, 0.96) infinite;
+}
+
+/* Each dot is rotated to its own angle, so the four dots travel
+   around a circle: 1st green · 2nd orange · 3rd orange · 4th green */
+.spinner-dot:nth-child(1) {
+  --rotation: 0deg;
+  --dot-color: #2ca01c;
+}
+
+.spinner-dot:nth-child(2) {
+  --rotation: 90deg;
+  --dot-color: #ff6b00;
+}
+
+.spinner-dot:nth-child(3) {
+  --rotation: 180deg;
+  --dot-color: #ff6b00;
+}
+
+.spinner-dot:nth-child(4) {
+  --rotation: 270deg;
+  --dot-color: #2ca01c;
+}
+
+.spinner-dot circle {
+  fill: var(--dot-color);
+  animation: spinner-scale 1.4s cubic-bezier(0.46, 0.03, 0.52, 0.96) infinite;
+}
+
+@keyframes spinner-rotate {
+  0%,
+  8% {
+    transform: rotate(0deg);
+  }
+  100% {
+    transform: rotate(470deg);
+  }
+}
+
+@keyframes spinner-bounce {
+  8% {
+    transform: rotate(var(--rotation)) translateY(0);
+  }
+  50%,
+  56% {
+    transform: rotate(var(--rotation)) translateY(-42%);
+  }
+  100% {
+    transform: rotate(var(--rotation)) translateY(0);
+  }
+}
+
+@keyframes spinner-scale {
+  8% {
+    transform: scale(1);
+  }
+  50%,
+  56% {
+    transform: scale(0.6);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+/* Reduced motion support */
+@media (prefers-reduced-motion: reduce) {
+  .spinner-wrapper {
+    animation: spinner-rotate 20s linear infinite;
+  }
+  .spinner-dot,
+  .spinner-dot circle {
+    animation: none;
+  }
+  .spinner-dot {
+    transform: rotate(var(--rotation)) translateY(-42%) !important;
+  }
+}
