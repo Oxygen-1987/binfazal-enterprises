@@ -10,7 +10,20 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { DatePicker } from "@/components/shared/date-picker";
-import { ArrowLeft, Save, PlusCircle, X } from "lucide-react";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
+  ArrowLeft,
+  Save,
+  X,
+  ChevronDown,
+  FilePlus,
+  CheckCircle,
+} from "lucide-react";
 import Link from "next/link";
 
 interface Client {
@@ -415,32 +428,50 @@ export default function NewJobPage() {
             </div>
 
             {/* Footer Buttons */}
-            <div className="flex justify-between space-x-3 pt-4 border-t border-gray-200 dark:border-gray-700">
+            <div className="flex justify-between items-center gap-3 pt-4 border-t border-gray-200 dark:border-gray-700">
               <Link href="/jobs">
                 <Button variant="outline" type="button">
                   <X className="mr-2 h-4 w-4" />
                   Cancel
                 </Button>
               </Link>
-              <div className="flex space-x-3">
-                <Button
-                  type="button"
-                  variant="outline"
-                  disabled={loading}
-                  onClick={(e) => handleSubmit(e, "save_new")}
-                >
-                  <PlusCircle className="mr-2 h-4 w-4" />
-                  {loading ? "Saving..." : "Save and New"}
-                </Button>
-                <Button
-                  type="button"
-                  disabled={loading}
-                  onClick={(e) => handleSubmit(e, "save_close")}
-                >
-                  <Save className="mr-2 h-4 w-4" />
-                  {loading ? "Saving..." : "Save and Close"}
-                </Button>
-              </div>
+
+              {/* Merged Save Dropdown */}
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button type="button" disabled={loading}>
+                    <Save className="mr-2 h-4 w-4" />
+                    {loading ? "Saving..." : "Save"}
+                    <ChevronDown className="ml-2 h-4 w-4" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-56">
+                  <DropdownMenuItem
+                    onClick={(e) => handleSubmit(e as any, "save_new")}
+                    className="cursor-pointer"
+                  >
+                    <FilePlus className="mr-3 h-4 w-4 text-[#FF6B00]" />
+                    <div className="flex flex-col">
+                      <span className="font-medium">Save and New</span>
+                      <span className="text-xs text-gray-500">
+                        Save and start another
+                      </span>
+                    </div>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    onClick={(e) => handleSubmit(e as any, "save_close")}
+                    className="cursor-pointer"
+                  >
+                    <CheckCircle className="mr-3 h-4 w-4 text-green-600" />
+                    <div className="flex flex-col">
+                      <span className="font-medium">Save and Close</span>
+                      <span className="text-xs text-gray-500">
+                        Save and go back to list
+                      </span>
+                    </div>
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
             </div>
           </form>
         </CardContent>
