@@ -4,6 +4,7 @@ import { Inter } from "next/font/google";
 import "./globals.css";
 import { ThemeProvider } from "@/context/theme-provider";
 import { AuthProvider } from "@/context/auth-context";
+import { BusinessProvider } from "@/context/business-context";
 import { Toaster } from "sonner";
 
 const inter = Inter({ subsets: ["latin"] });
@@ -28,21 +29,10 @@ export default function RootLayout({
           disableTransitionOnChange
         >
           <AuthProvider>
-            {children}
-            <Toaster
-              position="top-center"
-              richColors
-              closeButton
-              toastOptions={{
-                style: {
-                  background: "white",
-                  color: "black",
-                  border: "1px solid #e5e5e5",
-                },
-                className:
-                  "dark:!bg-gray-900 dark:!text-white dark:!border-gray-800",
-              }}
-            />
+            <BusinessProvider>
+              {children}
+              <Toaster position="top-center" richColors closeButton />
+            </BusinessProvider>
           </AuthProvider>
         </ThemeProvider>
       </body>

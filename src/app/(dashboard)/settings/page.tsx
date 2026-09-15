@@ -1,10 +1,10 @@
 // src/app/(dashboard)/settings/page.tsx
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { useAuth } from "@/context/auth-context";
-import { LoadingSpinner } from "@/components/shared/loading-spinner";
 import { supabase } from "@/lib/supabase/client";
+import { useBusiness } from "@/context/business-context";
 import {
   Card,
   CardContent,
@@ -33,6 +33,8 @@ import {
   RotateCcw,
   FileSpreadsheet,
   Database,
+  Loader2,
+  Trash2,
 } from "lucide-react";
 import {
   exportToExcel,
@@ -62,15 +64,20 @@ interface BusinessInfo {
   address: string;
   email: string;
   ledger_template_url: string;
+  business_logo_url: string;
 }
 
 export default function SettingsPage() {
   const { userProfile, userRole } = useAuth();
+  const { businessInfo: contextBusinessInfo, refreshBusinessInfo } =
+    useBusiness();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [users, setUsers] = useState<UserRecord[]>([]);
+  const [logoUploading, setLogoUploading] = useState(false);
+  const logoFileInputRef = useRef<HTMLInputElement>(null);
   const [businessInfo, setBusinessInfo] = useState<BusinessInfo>({
     business_name: "BinFazal Enterprises",
     owner_name: "",
@@ -78,6 +85,7 @@ export default function SettingsPage() {
     address: "",
     email: "",
     ledger_template_url: "",
+    business_logo_url: "",
   });
   const [successMessage, setSuccessMessage] = useState("");
   const [showAddUser, setShowAddUser] = useState(false);
@@ -86,7 +94,6 @@ export default function SettingsPage() {
     password: "",
     full_name: "",
     role: "employee",
-    // New employee detail fields
     phone: "",
     designation: "",
     joining_date: "",
@@ -104,7 +111,6 @@ export default function SettingsPage() {
   const fetchSettings = async () => {
     setLoading(true);
 
-    // Fetch users
     const { data: usersData } = await supabase
       .from("users")
       .select("*")
@@ -114,7 +120,6 @@ export default function SettingsPage() {
       setUsers(usersData);
     }
 
-    // Fetch business info
     const { data: settingsData } = await supabase
       .from("settings")
       .select("*")
@@ -128,6 +133,7 @@ export default function SettingsPage() {
         address: settingsData.address || "",
         email: settingsData.email || "",
         ledger_template_url: settingsData.ledger_template_url || "",
+        business_logo_url: settingsData.business_logo_url || "",
       });
     }
 
@@ -162,6 +168,7 @@ export default function SettingsPage() {
         if (error) throw error;
       }
 
+      await refreshBusinessInfo();
       setSuccessMessage("Business information saved successfully!");
       setTimeout(() => setSuccessMessage(""), 3000);
     } catch (error) {
@@ -169,6 +176,118 @@ export default function SettingsPage() {
       alert("Error saving settings");
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!file.type.startsWith("image/")) {
+      alert("Please upload an image file (PNG, JPG, etc.)");
+      return;
+    }
+
+    if (file.size > 2 * 1024 * 1024) {
+      alert("File size should be less than 2MB");
+      return;
+    }
+
+    setLogoUploading(true);
+
+    try {
+      // Delete old logo if exists
+      if (contextBusinessInfo?.business_logo_url) {
+        try {
+          const oldPath = contextBusinessInfo.business_logo_url
+            .split("/")
+            .pop();
+          if (oldPath) {
+            await supabase.storage.from("business-assets").remove([oldPath]);
+          }
+        } catch (err) {
+          console.log("Old logo not found or already deleted");
+        }
+      }
+
+      // Upload new logo
+      const fileExt = file.name.split(".").pop();
+      const fileName = `logo-${Date.now()}.${fileExt}`;
+
+      const { error: uploadError } = await supabase.storage
+        .from("business-assets")
+        .upload(fileName, file);
+
+      if (uploadError) throw uploadError;
+
+      const {
+        data: { publicUrl },
+      } = supabase.storage.from("business-assets").getPublicUrl(fileName);
+
+      // Save to settings
+      const { data: existingSettings } = await supabase
+        .from("settings")
+        .select("id")
+        .single();
+
+      if (existingSettings) {
+        await supabase
+          .from("settings")
+          .update({ business_logo_url: publicUrl })
+          .eq("id", existingSettings.id);
+      } else {
+        await supabase.from("settings").insert({
+          ...businessInfo,
+          business_logo_url: publicUrl,
+        });
+      }
+
+      setBusinessInfo((prev) => ({ ...prev, business_logo_url: publicUrl }));
+      await refreshBusinessInfo();
+
+      setSuccessMessage("Business logo uploaded successfully!");
+      setTimeout(() => setSuccessMessage(""), 3000);
+    } catch (error: any) {
+      console.error("Logo upload error:", error);
+      alert("Error uploading logo: " + error.message);
+    } finally {
+      setLogoUploading(false);
+      if (logoFileInputRef.current) {
+        logoFileInputRef.current.value = "";
+      }
+    }
+  };
+
+  const handleRemoveLogo = async () => {
+    if (!contextBusinessInfo?.business_logo_url) return;
+    if (!confirm("Remove business logo?")) return;
+
+    try {
+      const oldPath = contextBusinessInfo.business_logo_url.split("/").pop();
+      if (oldPath) {
+        await supabase.storage.from("business-assets").remove([oldPath]);
+      }
+
+      const { data: existingSettings } = await supabase
+        .from("settings")
+        .select("id")
+        .single();
+
+      if (existingSettings) {
+        await supabase
+          .from("settings")
+          .update({ business_logo_url: null })
+          .eq("id", existingSettings.id);
+      }
+
+      setBusinessInfo((prev) => ({ ...prev, business_logo_url: "" }));
+      await refreshBusinessInfo();
+
+      setSuccessMessage("Logo removed successfully!");
+      setTimeout(() => setSuccessMessage(""), 3000);
+    } catch (error: any) {
+      console.error("Error removing logo:", error);
+      alert("Error removing logo: " + error.message);
     }
   };
 
@@ -312,7 +431,6 @@ export default function SettingsPage() {
     setSaving(true);
 
     try {
-      // Step 1: Sign up the user (creates auth.users record)
       const { data: authData, error: authError } = await supabase.auth.signUp({
         email: newUser.email,
         password: newUser.password,
@@ -327,7 +445,6 @@ export default function SettingsPage() {
       if (authError) {
         console.error("Signup error:", authError);
 
-        // If already registered, try to find the existing user
         if (
           authError.message?.includes("already registered") ||
           authError.message?.includes("already exists")
@@ -346,10 +463,8 @@ export default function SettingsPage() {
         );
       }
 
-      // Step 2: Wait a moment for the auth record to fully propagate
       await new Promise((resolve) => setTimeout(resolve, 1000));
 
-      // Step 3: Insert into public.users
       const { error: userError } = await supabase.from("users").insert({
         id: authData.user.id,
         email: newUser.email,
@@ -367,7 +482,6 @@ export default function SettingsPage() {
       if (userError) {
         console.error("User insert error:", userError);
 
-        // If foreign key error, the auth record doesn't exist
         if (userError.code === "23503") {
           throw new Error(
             "Auth user not created. Please check Supabase email confirmation is disabled.",
@@ -377,7 +491,6 @@ export default function SettingsPage() {
         throw userError;
       }
 
-      // Success!
       fetchSettings();
       setShowAddUser(false);
       setNewUser({
@@ -434,7 +547,6 @@ export default function SettingsPage() {
     }
   };
 
-  // Delete user
   const handleDeleteUser = async (userId: string) => {
     if (userId === userProfile?.id) {
       alert("You cannot delete your own account!");
@@ -474,11 +586,9 @@ export default function SettingsPage() {
     }
   };
 
-  // Export handlers
   const handleExportAll = async () => {
     setExporting(true);
     try {
-      // Fetch all data
       const [
         clients,
         jobs,
@@ -509,7 +619,6 @@ export default function SettingsPage() {
         supabase.from("expenses").select("*").order("expense_date"),
       ]);
 
-      // Format data
       const clientsData = (clients.data || []).map((c) => ({
         Name: `${c.first_name} ${c.last_name}`,
         Company: c.company_name || "",
@@ -581,7 +690,6 @@ export default function SettingsPage() {
         Description: e.description || "",
       }));
 
-      // Export multi-sheet Excel
       exportMultiSheet(
         [
           { name: "Clients", data: clientsData },
@@ -643,7 +751,7 @@ export default function SettingsPage() {
   if (loading) {
     return (
       <div className="flex justify-center py-12">
-        <LoadingSpinner page />
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#FF6B00]" />
       </div>
     );
   }
@@ -662,6 +770,81 @@ export default function SettingsPage() {
           <Check className="h-4 w-4 mr-2" />
           {successMessage}
         </div>
+      )}
+
+      {/* Business Logo */}
+      {userRole === "owner" && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center">
+              <ImageIcon className="h-5 w-5 mr-2 text-[#FF6B00]" />
+              Business Logo
+            </CardTitle>
+            <CardDescription>
+              Upload your business logo. It will appear in the header next to
+              the business name.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="flex items-center space-x-4">
+              {/* Logo Preview */}
+              <div className="w-24 h-24 rounded-lg border-2 border-dashed border-gray-300 dark:border-gray-700 flex items-center justify-center overflow-hidden bg-gray-50 dark:bg-gray-900 flex-shrink-0">
+                {contextBusinessInfo?.business_logo_url ? (
+                  <img
+                    src={contextBusinessInfo.business_logo_url}
+                    alt="Business Logo"
+                    className="w-full h-full object-contain p-2"
+                  />
+                ) : (
+                  <ImageIcon className="h-10 w-10 text-gray-400" />
+                )}
+              </div>
+
+              {/* Actions */}
+              <div className="flex-1 space-y-2">
+                <input
+                  ref={logoFileInputRef}
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={handleLogoUpload}
+                  disabled={logoUploading}
+                />
+                <Button
+                  onClick={() => logoFileInputRef.current?.click()}
+                  disabled={logoUploading}
+                  className="w-full sm:w-auto"
+                >
+                  {logoUploading ? (
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  ) : (
+                    <Upload className="mr-2 h-4 w-4" />
+                  )}
+                  {logoUploading ? "Uploading..." : "Upload Logo"}
+                </Button>
+
+                {contextBusinessInfo?.business_logo_url && (
+                  <Button
+                    variant="outline"
+                    onClick={handleRemoveLogo}
+                    className="w-full sm:w-auto text-red-500 hover:text-red-600"
+                  >
+                    <Trash2 className="mr-2 h-4 w-4" />
+                    Remove
+                  </Button>
+                )}
+              </div>
+            </div>
+
+            <div className="bg-blue-50 dark:bg-blue-900/20 p-3 rounded-lg">
+              <p className="text-xs text-blue-700 dark:text-blue-300">
+                <strong>Recommended:</strong> Square image (500×500 px), PNG or
+                JPG, max 2MB. Use a logo with transparent background for best
+                results.
+              </p>
+            </div>
+          </CardContent>
+        </Card>
       )}
 
       {/* Business Information */}
@@ -745,9 +928,7 @@ export default function SettingsPage() {
           <div className="border-2 border-dashed border-gray-300 dark:border-gray-700 rounded-lg p-6">
             {businessInfo.ledger_template_url ? (
               <div className="space-y-4">
-                {/* Preview Container with Zoom Controls */}
                 <div className="relative">
-                  {/* Zoom Controls Toolbar */}
                   <div className="absolute top-2 right-2 z-10 flex items-center space-x-1 bg-white/90 dark:bg-gray-900/90 backdrop-blur-sm rounded-lg shadow-lg p-1">
                     <Button
                       variant="ghost"
@@ -802,7 +983,6 @@ export default function SettingsPage() {
                     </Button>
                   </div>
 
-                  {/* Preview Area */}
                   <div className="w-full h-96 bg-gray-100 dark:bg-gray-800 rounded-lg overflow-auto flex items-center justify-center">
                     <div
                       className="transition-transform duration-200 ease-out"
@@ -825,7 +1005,6 @@ export default function SettingsPage() {
                   </p>
                 </div>
 
-                {/* Action Buttons */}
                 <div className="flex justify-between items-center pt-3 border-t border-gray-200 dark:border-gray-700">
                   <div className="flex items-center text-sm text-green-600">
                     <Check className="h-4 w-4 mr-1" />
@@ -912,7 +1091,6 @@ export default function SettingsPage() {
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            {/* Full Backup */}
             <div className="p-4 bg-gradient-to-br from-orange-50 to-orange-100 dark:from-orange-900/20 dark:to-orange-800/10 rounded-lg border border-orange-200 dark:border-orange-800">
               <div className="flex items-start justify-between">
                 <div className="flex-1">
@@ -936,7 +1114,6 @@ export default function SettingsPage() {
               </Button>
             </div>
 
-            {/* Individual Exports */}
             <div>
               <h3 className="font-semibold mb-3 text-sm">Individual Exports</h3>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -996,7 +1173,6 @@ export default function SettingsPage() {
               >
                 <h3 className="font-semibold">Add New User</h3>
 
-                {/* Account Credentials */}
                 <div className="space-y-3">
                   <p className="text-xs font-semibold text-gray-500 uppercase">
                     Account Credentials
@@ -1070,7 +1246,6 @@ export default function SettingsPage() {
                   </div>
                 </div>
 
-                {/* Employee Details (only if role is employee) */}
                 {newUser.role === "employee" && (
                   <div className="space-y-3 pt-4 border-t border-gray-200 dark:border-gray-700">
                     <p className="text-xs font-semibold text-gray-500 uppercase">
@@ -1259,7 +1434,6 @@ export default function SettingsPage() {
           onClick={() => setShowFullscreen(false)}
         >
           <div className="relative w-full h-full flex items-center justify-center p-4">
-            {/* Close Button */}
             <Button
               variant="ghost"
               size="icon"
@@ -1269,7 +1443,6 @@ export default function SettingsPage() {
               <X className="h-6 w-6" />
             </Button>
 
-            {/* Zoom Controls */}
             <div className="absolute bottom-4 left-1/2 transform -translate-x-1/2 z-10 flex items-center space-x-2 bg-white/90 dark:bg-gray-900/90 backdrop-blur-sm rounded-lg shadow-lg p-2">
               <Button
                 variant="ghost"
@@ -1299,7 +1472,6 @@ export default function SettingsPage() {
               </Button>
             </div>
 
-            {/* Image */}
             <div
               className="max-w-full max-h-full overflow-auto"
               onClick={(e) => e.stopPropagation()}
@@ -1315,7 +1487,6 @@ export default function SettingsPage() {
               />
             </div>
 
-            {/* File Info */}
             <div className="absolute top-4 left-4 text-white text-sm">
               <p className="font-medium">Ledger Template Preview</p>
               <p className="text-xs text-gray-300">Click outside to close</p>
