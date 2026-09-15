@@ -91,7 +91,7 @@ export function GlobalSearch() {
           subtitle: c.company_name
             ? `${c.first_name} ${c.last_name} • ${c.mobile_number}`
             : c.mobile_number,
-          href: `/clients/${c.id}/ledger`,
+          href: `/clients/${c.id}`,
         });
       });
 

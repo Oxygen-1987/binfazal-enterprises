@@ -114,8 +114,6 @@ export default function ClientsPage() {
       return;
     }
 
-    // Fetch all jobs and payments for balance calculation
-    // Note: For a large dataset, this should be done server-side via RPC
     const [jobsResult, paymentsResult] = await Promise.all([
       supabase.from("print_jobs").select("client_id, total_amount"),
       supabase.from("payments").select("client_id, amount"),
@@ -312,7 +310,7 @@ export default function ClientsPage() {
                   >
                     <td className="py-3 px-3">
                       <Link
-                        href={`/clients/${client.id}/ledger`}
+                        href={`/clients/${client.id}`}
                         className="hover:text-[#FF6B00]"
                       >
                         <div className="font-medium">
@@ -414,8 +412,8 @@ export default function ClientsPage() {
               <CardContent className="p-4">
                 <div className="flex items-start justify-between">
                   <div className="flex-1 min-w-0">
-                    <Link href={`/clients/${client.id}/ledger`}>
-                      <h3 className="font-semibold text-lg truncate">
+                    <Link href={`/clients/${client.id}`}>
+                      <h3 className="font-semibold text-lg truncate hover:text-[#FF6B00]">
                         {client.company_name ||
                           `${client.first_name} ${client.last_name}`}
                       </h3>
