@@ -4,28 +4,10 @@
 import { useEffect, useState, useRef } from "react";
 import { supabase } from "@/lib/supabase/client";
 import { Card, CardContent } from "@/components/ui/card";
-import { LedgerSkeleton } from "@/components/shared/skeletons";
-import { showToast } from "@/lib/utils/toast";
 import { Button } from "@/components/ui/button";
-import {
-  Download,
-  FileImage,
-  Loader2,
-  Share2,
-  AlertCircle,
-} from "lucide-react";
+import { Download, FileImage, Loader2, Share2 } from "lucide-react";
 import { formatCurrency, formatDate } from "@/lib/utils/format";
-import {
-  shareFile,
-  saveFile,
-  getSaveLocationMessage,
-  isNativeApp,
-} from "@/lib/utils/share";
-import { getErrorMessage } from "@/lib/utils/errors";
-import {
-  hasAllFilesPermission,
-  openAllFilesSettings,
-} from "@/lib/utils/permissions";
+import { shareFile, saveFile, getSaveLocationMessage } from "@/lib/utils/share";
 
 interface LedgerEntry {
   id: string;
@@ -58,23 +40,13 @@ interface LedgerViewerProps {
 const A4_WIDTH_PX = 794;
 const A4_HEIGHT_PX = 1123;
 
-async function imageUrlToBase64(url: string): Promise<string> {
-  if (url.startsWith("data:")) return url;
-
-  try {
-    const response = await fetch(url);
-    const blob = await response.blob();
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onloadend = () => resolve(reader.result as string);
-      reader.onerror = reject;
-      reader.readAsDataURL(blob);
-    });
-  } catch (error) {
-    console.error("Failed to convert image to base64:", error);
-    return url;
-  }
-}
+// Page layout: TOP padding already correct for your template
+const PAGE_TOP_PADDING = 60;
+const CLIENT_INFO_HEIGHT = 170;
+const BOTTOM_PADDING = 45;
+const FOOTER_RESERVE = 90; // ~2.5 inches ≈ 63mm reserved for template footer
+const ROW_HEIGHT = 24;
+const ROWS_PER_PAGE = 26; // Adjust if footer size changes
 
 export function LedgerViewer({
   clientId,
@@ -93,15 +65,6 @@ export function LedgerViewer({
   const [sharing, setSharing] = useState(false);
   const [statementPeriod, setStatementPeriod] = useState({ from: "", to: "" });
   const ledgerRef = useRef<HTMLDivElement>(null);
-  const [hasFilePermission, setHasFilePermission] = useState(true);
-
-  useEffect(() => {
-    const checkPermission = async () => {
-      const has = await hasAllFilesPermission();
-      setHasFilePermission(has);
-    };
-    checkPermission();
-  }, []);
 
   useEffect(() => {
     fetchBusinessInfo();
@@ -118,7 +81,6 @@ export function LedgerViewer({
 
     if (data) {
       setBusinessInfo(data);
-
       if (data.ledger_template_url) {
         try {
           const base64 = await imageUrlToBase64(data.ledger_template_url);
@@ -267,6 +229,36 @@ export function LedgerViewer({
     setLoading(false);
   };
 
+  // ============================================
+  // PAGINATION — computes at render, not in functions
+  // ============================================
+  const pages: LedgerEntry[][] = [];
+  if (entries.length === 0) {
+    pages.push([]);
+  } else {
+    // First page might reserve 1 row if opening balance exists
+    const firstPageCapacity = ROWS_PER_PAGE - 1;
+    const subsequentPageCapacity = ROWS_PER_PAGE;
+
+    let i = 0;
+    let pageIndex = 0;
+    while (i < entries.length) {
+      const capacity =
+        pageIndex === 0 ? firstPageCapacity : subsequentPageCapacity;
+      pages.push(entries.slice(i, i + capacity));
+      i += capacity;
+      pageIndex++;
+    }
+  }
+  const pageCount = pages.length;
+
+  // Compute carry-forward balance for non-last pages
+  const getPageCarryForward = (pageIdx: number) => {
+    if (pageIdx >= pages.length - 1) return null; // last page
+    const lastEntry = pages[pageIdx][pages[pageIdx].length - 1];
+    return lastEntry?.balance || 0;
+  };
+
   const generateCanvas = async () => {
     const html2canvas = (await import("html2canvas")).default;
 
@@ -284,8 +276,6 @@ export function LedgerViewer({
     tempContainer.style.left = "-10000px";
     tempContainer.style.top = "0";
     tempContainer.style.width = `${A4_WIDTH_PX}px`;
-    tempContainer.style.height = `${A4_HEIGHT_PX}px`;
-    tempContainer.style.zIndex = "-1";
     tempContainer.style.backgroundColor = "#ffffff";
 
     tempContainer.innerHTML = sourceElement.innerHTML;
@@ -301,9 +291,7 @@ export function LedgerViewer({
         backgroundColor: "#ffffff",
         logging: false,
         width: A4_WIDTH_PX,
-        height: A4_HEIGHT_PX,
         windowWidth: A4_WIDTH_PX,
-        windowHeight: A4_HEIGHT_PX,
         imageTimeout: 15000,
       });
 
@@ -313,6 +301,7 @@ export function LedgerViewer({
     }
   };
 
+  // Multi-page PDF: splits canvas into A4 pages
   const generatePDFBlob = async (canvas: HTMLCanvasElement): Promise<Blob> => {
     const { jsPDF } = await import("jspdf");
 
@@ -325,24 +314,36 @@ export function LedgerViewer({
     const pdfWidth = pdf.internal.pageSize.getWidth();
     const pdfHeight = pdf.internal.pageSize.getHeight();
 
-    const imgRatio = canvas.width / canvas.height;
-    const pdfRatio = pdfWidth / pdfHeight;
+    // Slice canvas into pages
+    for (let page = 0; page < pageCount; page++) {
+      if (page > 0) pdf.addPage();
 
-    let finalWidth = pdfWidth;
-    let finalHeight = pdfHeight;
-    let offsetX = 0;
-    let offsetY = 0;
+      const pageCanvas = document.createElement("canvas");
+      pageCanvas.width = A4_WIDTH_PX * 2;
+      pageCanvas.height = A4_HEIGHT_PX * 2;
+      const ctx = pageCanvas.getContext("2d");
 
-    if (imgRatio > pdfRatio) {
-      finalHeight = pdfWidth / imgRatio;
-      offsetY = (pdfHeight - finalHeight) / 2;
-    } else {
-      finalWidth = pdfHeight * imgRatio;
-      offsetX = (pdfWidth - finalWidth) / 2;
+      if (ctx) {
+        ctx.fillStyle = "#ffffff";
+        ctx.fillRect(0, 0, pageCanvas.width, pageCanvas.height);
+        // Source y-offset in the tall canvas
+        const sy = page * A4_HEIGHT_PX * 2;
+        ctx.drawImage(
+          canvas,
+          0,
+          sy, // source x, y
+          A4_WIDTH_PX * 2,
+          A4_HEIGHT_PX * 2, // source w, h
+          0,
+          0, // dest x, y
+          pageCanvas.width,
+          pageCanvas.height,
+        );
+      }
+
+      const pageImgData = pageCanvas.toDataURL("image/jpeg", 0.95);
+      pdf.addImage(pageImgData, "JPEG", 0, 0, pdfWidth, pdfHeight);
     }
-
-    const imgData = canvas.toDataURL("image/jpeg", 0.95);
-    pdf.addImage(imgData, "JPEG", offsetX, offsetY, finalWidth, finalHeight);
 
     return pdf.output("blob");
   };
@@ -362,15 +363,10 @@ export function LedgerViewer({
       const pdfBlob = await generatePDFBlob(canvas);
       const fileName = getFileName("pdf");
       await saveFile(pdfBlob, fileName, "application/pdf");
-
-      if (isNativeApp()) {
-        showToast.success("PDF ready", "Choose where to save it");
-      } else {
-        showToast.success("PDF downloaded");
-      }
+      alert(getSaveLocationMessage());
     } catch (error: any) {
       console.error("PDF Error:", error);
-      showToast.error("Failed to generate PDF", getErrorMessage(error));
+      alert(`Error: ${error.message || "Failed to generate PDF"}`);
     } finally {
       setDownloading(false);
     }
@@ -386,15 +382,10 @@ export function LedgerViewer({
       if (!blob) throw new Error("Failed to create image");
       const fileName = getFileName("png");
       await saveFile(blob, fileName, "image/png");
-
-      if (isNativeApp()) {
-        showToast.success("Image ready", "Choose where to save it");
-      } else {
-        showToast.success("Image downloaded");
-      }
+      alert(getSaveLocationMessage());
     } catch (error: any) {
       console.error("PNG Error:", error);
-      showToast.error("Failed to generate image", getErrorMessage(error));
+      alert(`Error: ${error.message || "Failed to generate PNG"}`);
     } finally {
       setDownloadingPng(false);
     }
@@ -413,17 +404,20 @@ export function LedgerViewer({
       }`;
 
       await shareFile(pdfBlob, fileName, "Client Ledger", shareText);
-      showToast.success("Shared successfully");
     } catch (error: any) {
       console.error("Share Error:", error);
-      showToast.error("Failed to share", getErrorMessage(error));
+      alert(`Error: ${error.message || "Failed to share"}`);
     } finally {
       setSharing(false);
     }
   };
 
   if (loading) {
-    return <LedgerSkeleton />;
+    return (
+      <div className="flex justify-center py-12">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#FF6B00]" />
+      </div>
+    );
   }
 
   if (!client) {
@@ -494,32 +488,6 @@ export function LedgerViewer({
         </CardContent>
       </Card>
 
-      {!hasFilePermission && (
-        <Card className="bg-yellow-50 dark:bg-yellow-900/20 border-yellow-200 dark:border-yellow-800">
-          <CardContent className="p-4">
-            <div className="flex items-start space-x-3">
-              <AlertCircle className="h-5 w-5 text-yellow-600 flex-shrink-0 mt-0.5" />
-              <div className="flex-1">
-                <p className="font-semibold text-sm text-yellow-800 dark:text-yellow-200">
-                  File access permission required
-                </p>
-                <p className="text-xs text-yellow-700 dark:text-yellow-300 mt-1">
-                  To download and share files, please enable "All files access"
-                  for BinFazal.
-                </p>
-                <Button
-                  size="sm"
-                  className="mt-2 bg-yellow-600 hover:bg-yellow-700 text-white"
-                  onClick={openAllFilesSettings}
-                >
-                  Open Settings
-                </Button>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
       {/* Action Buttons */}
       {showDownloadButtons && hasTemplate && (
         <div className="flex justify-end gap-2 flex-wrap">
@@ -562,7 +530,7 @@ export function LedgerViewer({
         </div>
       )}
 
-      {/* Ledger Table */}
+      {/* Screen View */}
       <Card>
         <CardContent className="p-4 overflow-x-auto">
           <table className="w-full text-sm">
@@ -617,259 +585,291 @@ export function LedgerViewer({
                   </td>
                 </tr>
               ))}
-              {entries.length === 0 && (
-                <tr>
-                  <td colSpan={7} className="text-center py-8 text-gray-500">
-                    No transactions found
-                  </td>
-                </tr>
-              )}
             </tbody>
           </table>
         </CardContent>
       </Card>
 
-      {/* Hidden A4 Template */}
+      {/* ========== HIDDEN MULTI-PAGE TEMPLATE ========== */}
       {hasTemplate && (
         <div
           ref={ledgerRef}
           style={{
             display: "none",
             width: `${A4_WIDTH_PX}px`,
-            height: `${A4_HEIGHT_PX}px`,
-            overflow: "hidden",
           }}
         >
-          <div
-            style={{
-              width: `${A4_WIDTH_PX}px`,
-              height: `${A4_HEIGHT_PX}px`,
-              position: "relative",
-              backgroundColor: "#ffffff",
-              fontFamily: "Arial, sans-serif",
-              boxSizing: "border-box",
-            }}
-          >
-            <img
-              src={templateBase64 || businessInfo?.ledger_template_url}
-              alt=""
-              crossOrigin="anonymous"
+          {pages.map((pageEntries, pageIndex) => (
+            <div
+              key={pageIndex}
               style={{
-                position: "absolute",
-                top: 0,
-                left: 0,
                 width: `${A4_WIDTH_PX}px`,
                 height: `${A4_HEIGHT_PX}px`,
-                objectFit: "fill",
-                zIndex: 0,
-              }}
-            />
-
-            <div
-              style={{
                 position: "relative",
-                zIndex: 1,
-                padding: "60px 45px 45px 45px",
-                width: "100%",
-                height: "100%",
+                backgroundColor: "#ffffff",
+                fontFamily: "Arial, sans-serif",
                 boxSizing: "border-box",
               }}
             >
+              {/* Template image background */}
+              <img
+                src={templateBase64 || businessInfo?.ledger_template_url}
+                alt=""
+                crossOrigin="anonymous"
+                style={{
+                  position: "absolute",
+                  top: 0,
+                  left: 0,
+                  width: `${A4_WIDTH_PX}px`,
+                  height: `${A4_HEIGHT_PX}px`,
+                  objectFit: "fill",
+                  zIndex: 0,
+                }}
+              />
+
+              {/* Content overlay */}
               <div
                 style={{
-                  marginTop: "170px",
-                  marginBottom: "15px",
-                  fontSize: "12px",
-                  color: "#000",
+                  position: "relative",
+                  zIndex: 1,
+                  padding: `${PAGE_TOP_PADDING}px 45px ${BOTTOM_PADDING}px 45px`,
+                  width: "100%",
+                  height: "100%",
+                  boxSizing: "border-box",
+                  display: "flex",
+                  flexDirection: "column",
                 }}
               >
+                {/* Client Info */}
                 <div
-                  style={{ display: "flex", justifyContent: "space-between" }}
+                  style={{
+                    marginTop: `${CLIENT_INFO_HEIGHT}px`,
+                    marginBottom: "15px",
+                    fontSize: "12px",
+                    color: "#000",
+                  }}
                 >
-                  <div style={{ width: "55%" }}>
-                    <p style={{ margin: "3px 0" }}>
-                      <strong>Client:</strong>{" "}
-                      {client?.company_name ||
-                        `${client?.first_name} ${client?.last_name}`}
-                    </p>
-                    <p style={{ margin: "3px 0" }}>
-                      <strong>Mobile:</strong> {client?.mobile_number || "-"}
-                    </p>
-                  </div>
-                  <div style={{ width: "45%", textAlign: "right" }}>
-                    <p style={{ margin: "3px 0" }}>
-                      <strong>Statement Period:</strong>{" "}
-                      {statementPeriod.from
-                        ? `${formatDate(statementPeriod.from)} to ${formatDate(
-                            statementPeriod.to,
-                          )}`
-                        : "-"}
-                    </p>
-                    <p style={{ margin: "3px 0" }}>
-                      <strong>Date:</strong> {formatDate(new Date())}
-                    </p>
+                  <div
+                    style={{ display: "flex", justifyContent: "space-between" }}
+                  >
+                    <div style={{ width: "55%" }}>
+                      <p style={{ margin: "3px 0" }}>
+                        <strong>Client:</strong>{" "}
+                        {client?.company_name ||
+                          `${client?.first_name} ${client?.last_name}`}
+                      </p>
+                      <p style={{ margin: "3px 0" }}>
+                        <strong>Mobile:</strong> {client?.mobile_number || "-"}
+                      </p>
+                      {pageIndex > 0 && (
+                        <p
+                          style={{
+                            margin: "3px 0",
+                            fontStyle: "italic",
+                            color: "#666",
+                          }}
+                        >
+                          (Continued from previous page)
+                        </p>
+                      )}
+                    </div>
+                    <div style={{ width: "45%", textAlign: "right" }}>
+                      <p style={{ margin: "3px 0" }}>
+                        <strong>Statement Period:</strong>{" "}
+                        {statementPeriod.from
+                          ? `${formatDate(
+                              statementPeriod.from,
+                            )} to ${formatDate(statementPeriod.to)}`
+                          : "-"}
+                      </p>
+                      <p style={{ margin: "3px 0" }}>
+                        <strong>Page:</strong> {pageIndex + 1} of {pageCount}
+                      </p>
+                      <p style={{ margin: "3px 0" }}>
+                        <strong>Date:</strong> {formatDate(new Date())}
+                      </p>
+                    </div>
                   </div>
                 </div>
-              </div>
 
-              <table
-                style={{
-                  width: "100%",
-                  borderCollapse: "collapse",
-                  fontSize: "10px",
-                  color: "#000",
-                }}
-              >
-                <thead>
-                  <tr
-                    style={{
-                      borderTop: "2px solid #000",
-                      borderBottom: "2px solid #000",
-                    }}
-                  >
-                    <th
-                      style={{
-                        textAlign: "left",
-                        padding: "5px 3px",
-                        fontWeight: "bold",
-                        width: "13%",
-                      }}
-                    >
-                      Date
-                    </th>
-                    <th
-                      style={{
-                        textAlign: "left",
-                        padding: "5px 3px",
-                        fontWeight: "bold",
-                        width: "32%",
-                      }}
-                    >
-                      Description
-                    </th>
-                    <th
-                      style={{
-                        textAlign: "right",
-                        padding: "5px 3px",
-                        fontWeight: "bold",
-                        width: "10%",
-                      }}
-                    >
-                      Qty
-                    </th>
-                    <th
-                      style={{
-                        textAlign: "right",
-                        padding: "5px 3px",
-                        fontWeight: "bold",
-                        width: "10%",
-                      }}
-                    >
-                      Rate
-                    </th>
-                    <th
-                      style={{
-                        textAlign: "right",
-                        padding: "5px 3px",
-                        fontWeight: "bold",
-                        width: "12%",
-                      }}
-                    >
-                      Debit
-                    </th>
-                    <th
-                      style={{
-                        textAlign: "right",
-                        padding: "5px 3px",
-                        fontWeight: "bold",
-                        width: "11%",
-                      }}
-                    >
-                      Credit
-                    </th>
-                    <th
-                      style={{
-                        textAlign: "right",
-                        padding: "5px 3px",
-                        fontWeight: "bold",
-                        width: "12%",
-                      }}
-                    >
-                      Balance
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {entries.map((entry) => (
+                {/* Ledger Table */}
+                <table
+                  style={{
+                    width: "100%",
+                    borderCollapse: "collapse",
+                    fontSize: "10px",
+                    color: "#000",
+                    flexGrow: 0,
+                  }}
+                >
+                  <thead>
                     <tr
-                      key={entry.id}
-                      style={{ borderBottom: "1px solid #ccc" }}
+                      style={{
+                        borderTop: "2px solid #000",
+                        borderBottom: "2px solid #000",
+                      }}
                     >
-                      <td style={{ padding: "4px 3px", whiteSpace: "nowrap" }}>
-                        {formatDate(entry.date)}
-                      </td>
-                      <td style={{ padding: "4px 3px" }}>
-                        {entry.description}
-                      </td>
-                      <td style={{ textAlign: "right", padding: "4px 3px" }}>
-                        {entry.print_qty
-                          ? entry.print_qty.toLocaleString()
-                          : ""}
-                      </td>
-                      <td style={{ textAlign: "right", padding: "4px 3px" }}>
-                        {entry.rate ? entry.rate.toFixed(4) : ""}
-                      </td>
-                      <td style={{ textAlign: "right", padding: "4px 3px" }}>
-                        {entry.debit > 0 ? formatCurrency(entry.debit) : ""}
-                      </td>
-                      <td style={{ textAlign: "right", padding: "4px 3px" }}>
-                        {entry.credit > 0 ? formatCurrency(entry.credit) : ""}
-                      </td>
-                      <td
+                      <th
                         style={{
-                          textAlign: "right",
-                          padding: "4px 3px",
-                          fontWeight: 500,
+                          textAlign: "left",
+                          padding: "5px 3px",
+                          fontWeight: "bold",
+                          width: "13%",
                         }}
                       >
-                        {formatCurrency(entry.balance)}
-                      </td>
-                    </tr>
-                  ))}
-                  {entries.length < 18 &&
-                    Array.from({ length: 18 - entries.length }).map((_, i) => (
-                      <tr
-                        key={`empty-${i}`}
-                        style={{ borderBottom: "1px solid #eee" }}
+                        Date
+                      </th>
+                      <th
+                        style={{
+                          textAlign: "left",
+                          padding: "5px 3px",
+                          fontWeight: "bold",
+                          width: "32%",
+                        }}
                       >
-                        <td style={{ padding: "4px 3px" }}>&nbsp;</td>
-                        <td style={{ padding: "4px 3px" }}></td>
-                        <td style={{ padding: "4px 3px" }}></td>
-                        <td style={{ padding: "4px 3px" }}></td>
-                        <td style={{ padding: "4px 3px" }}></td>
-                        <td style={{ padding: "4px 3px" }}></td>
-                        <td style={{ padding: "4px 3px" }}></td>
+                        Description
+                      </th>
+                      <th
+                        style={{
+                          textAlign: "right",
+                          padding: "5px 3px",
+                          fontWeight: "bold",
+                          width: "10%",
+                        }}
+                      >
+                        Qty
+                      </th>
+                      <th
+                        style={{
+                          textAlign: "right",
+                          padding: "5px 3px",
+                          fontWeight: "bold",
+                          width: "10%",
+                        }}
+                      >
+                        Rate
+                      </th>
+                      <th
+                        style={{
+                          textAlign: "right",
+                          padding: "5px 3px",
+                          fontWeight: "bold",
+                          width: "12%",
+                        }}
+                      >
+                        Debit
+                      </th>
+                      <th
+                        style={{
+                          textAlign: "right",
+                          padding: "5px 3px",
+                          fontWeight: "bold",
+                          width: "11%",
+                        }}
+                      >
+                        Credit
+                      </th>
+                      <th
+                        style={{
+                          textAlign: "right",
+                          padding: "5px 3px",
+                          fontWeight: "bold",
+                          width: "12%",
+                        }}
+                      >
+                        Balance
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {pageEntries.map((entry) => (
+                      <tr
+                        key={entry.id}
+                        style={{
+                          borderBottom: "1px solid #ccc",
+                          height: `${ROW_HEIGHT}px`,
+                        }}
+                      >
+                        <td
+                          style={{ padding: "4px 3px", whiteSpace: "nowrap" }}
+                        >
+                          {formatDate(entry.date)}
+                        </td>
+                        <td style={{ padding: "4px 3px" }}>
+                          {entry.description}
+                        </td>
+                        <td style={{ textAlign: "right", padding: "4px 3px" }}>
+                          {entry.print_qty
+                            ? entry.print_qty.toLocaleString()
+                            : ""}
+                        </td>
+                        <td style={{ textAlign: "right", padding: "4px 3px" }}>
+                          {entry.rate ? entry.rate.toFixed(4) : ""}
+                        </td>
+                        <td style={{ textAlign: "right", padding: "4px 3px" }}>
+                          {entry.debit > 0 ? formatCurrency(entry.debit) : ""}
+                        </td>
+                        <td style={{ textAlign: "right", padding: "4px 3px" }}>
+                          {entry.credit > 0 ? formatCurrency(entry.credit) : ""}
+                        </td>
+                        <td
+                          style={{
+                            textAlign: "right",
+                            padding: "4px 3px",
+                            fontWeight: 500,
+                          }}
+                        >
+                          {formatCurrency(entry.balance)}
+                        </td>
                       </tr>
                     ))}
-                </tbody>
-                <tfoot>
-                  <tr
-                    style={{ borderTop: "2px solid #000", fontWeight: "bold" }}
-                  >
-                    <td
-                      colSpan={6}
-                      style={{ padding: "8px 3px", textAlign: "right" }}
-                    >
-                      Closing Balance:
-                    </td>
-                    <td style={{ padding: "8px 3px", textAlign: "right" }}>
-                      {formatCurrency(runningBalance)}
-                    </td>
-                  </tr>
-                </tfoot>
-              </table>
+                  </tbody>
+                  <tfoot>
+                    {pageIndex < pageCount - 1 ? (
+                      // Non-last page: Balance Carried Forward
+                      <tr
+                        style={{
+                          borderTop: "2px solid #000",
+                          fontWeight: "bold",
+                        }}
+                      >
+                        <td
+                          colSpan={6}
+                          style={{ padding: "8px 3px", textAlign: "right" }}
+                        >
+                          Balance Carried Forward:
+                        </td>
+                        <td style={{ padding: "8px 3px", textAlign: "right" }}>
+                          {formatCurrency(getPageCarryForward(pageIndex) || 0)}
+                        </td>
+                      </tr>
+                    ) : (
+                      // Last page: Closing Balance
+                      <tr
+                        style={{
+                          borderTop: "2px solid #000",
+                          fontWeight: "bold",
+                        }}
+                      >
+                        <td
+                          colSpan={6}
+                          style={{ padding: "8px 3px", textAlign: "right" }}
+                        >
+                          Closing Balance:
+                        </td>
+                        <td style={{ padding: "8px 3px", textAlign: "right" }}>
+                          {formatCurrency(runningBalance)}
+                        </td>
+                      </tr>
+                    )}
+                  </tfoot>
+                </table>
+
+                {/* Spacer to reserve footer area — pushes content up so footer text isn't covered */}
+                <div style={{ height: `${FOOTER_RESERVE}px`, flexShrink: 0 }} />
+              </div>
             </div>
-          </div>
+          ))}
         </div>
       )}
 
@@ -885,4 +885,22 @@ export function LedgerViewer({
       )}
     </div>
   );
+}
+
+// Helper to convert image URL to base64
+async function imageUrlToBase64(url: string): Promise<string> {
+  if (url.startsWith("data:")) return url;
+  try {
+    const response = await fetch(url);
+    const blob = await response.blob();
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onloadend = () => resolve(reader.result as string);
+      reader.onerror = reject;
+      reader.readAsDataURL(blob);
+    });
+  } catch (error) {
+    console.error("Failed to convert image to base64:", error);
+    return url;
+  }
 }

@@ -20,6 +20,10 @@ import {
   FileText,
   List,
   LayoutGrid,
+  Upload,
+  Download,
+  FileSpreadsheet,
+  ChevronDown,
 } from "lucide-react";
 import Link from "next/link";
 import { formatCurrency, formatDate } from "@/lib/utils/format";
@@ -29,6 +33,16 @@ import {
   type DateFilterType,
 } from "@/components/shared/date-range-filter";
 import { Pagination } from "@/components/shared/pagination";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { exportJobsToExcel, exportJobsToCSV } from "@/lib/utils/job-import-export";
+import { showToast } from "@/lib/utils/toast";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -186,6 +200,53 @@ export default function JobsPage() {
     }
   };
 
+  const handleExport = async (format: "excel" | "csv") => {
+    try {
+      // Fetch clients for dropdown
+      const { data: clients } = await supabase
+        .from("clients")
+        .select("id, first_name, last_name, company_name")
+        .order("company_name");
+
+      // Fetch products for dropdown
+      const { data: products } = await supabase
+        .from("client_products")
+        .select("id, name, client_id")
+        .order("name");
+
+      const clientOptions = (clients || []).map((c) => ({
+        id: c.id,
+        display: c.company_name || `${c.first_name} ${c.last_name}`,
+      }));
+
+      const productOptions = (products || []).map((p) => ({
+        id: p.id,
+        client_id: p.client_id,
+        name: p.name,
+        display: p.name,
+      }));
+
+      if (format === "excel") {
+        await exportJobsToExcel({
+          jobs: filteredJobs,
+          clients: clientOptions,
+          products: productOptions,
+        });
+      } else {
+        exportJobsToCSV({
+          jobs: filteredJobs,
+          clients: clientOptions,
+          products: productOptions,
+        });
+      }
+
+      showToast.success(`Exported ${filteredJobs.length} jobs`);
+    } catch (error: any) {
+      console.error("Export error:", error);
+      showToast.error("Failed to export", error.message);
+    }
+  };
+
   const getStatusColor = (status: string) => {
     switch (status) {
       case "new":
@@ -225,12 +286,43 @@ export default function JobsPage() {
           <h1 className="text-2xl font-bold">Print Jobs</h1>
           <p className="text-gray-500 text-sm">Manage your print jobs</p>
         </div>
-        <Link href="/jobs/new">
-          <Button>
-            <Plus className="mr-2 h-4 w-4" />
-            New Job
-          </Button>
-        </Link>
+        <div className="flex gap-2 flex-wrap">
+          <Link href="/jobs/import">
+            <Button variant="outline">
+              <Upload className="mr-2 h-4 w-4" />
+              Import
+            </Button>
+          </Link>
+
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline">
+                <Download className="mr-2 h-4 w-4" />
+                Export
+                <ChevronDown className="ml-2 h-4 w-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuLabel>Download as</DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={() => handleExport("excel")}>
+                <FileSpreadsheet className="mr-2 h-4 w-4 text-green-600" />
+                Excel (.xlsx) - with dropdowns
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => handleExport("csv")}>
+                <FileText className="mr-2 h-4 w-4 text-blue-600" />
+                CSV (.csv) - plain
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+
+          <Link href="/jobs/new">
+            <Button>
+              <Plus className="mr-2 h-4 w-4" />
+              New Job
+            </Button>
+          </Link>
+        </div>
       </div>
 
       {/* Summary Card */}
