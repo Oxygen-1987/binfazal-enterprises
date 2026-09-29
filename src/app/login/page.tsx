@@ -1,116 +1,193 @@
 // src/app/login/page.tsx
-"use client";
+"use client"
 
-import { useState, useEffect } from "react";
-import { useAuth } from "@/context/auth-context";
-import { supabase } from "@/lib/supabase/client";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import { Printer } from "lucide-react";
-import { ThemeToggle } from "@/components/shared/theme-toggle";
+import { useEffect, useState } from "react"
+import { useAuth } from "@/context/auth-context"
+import { useTheme } from "next-themes"
+import { showToast } from "@/lib/utils/toast"
+import { getErrorMessage } from "@/lib/utils/errors"
+import { Lamp } from "./lamp"
+import styles from "./login.module.css"
+import Image from "next/image"
+import { Eye, EyeOff, Moon, Sun } from "lucide-react"
 
 export default function LoginPage() {
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [error, setError] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [logoUrl, setLogoUrl] = useState("");
-  const { signIn } = useAuth();
+  const { signIn } = useAuth()
+  const { theme, setTheme } = useTheme()
+  const [mounted, setMounted] = useState(false)
+  const [isLampOn, setIsLampOn] = useState(false)
+  const [email, setEmail] = useState("")
+  const [password, setPassword] = useState("")
+  const [showPassword, setShowPassword] = useState(false)
+  const [error, setError] = useState("")
+  const [loading, setLoading] = useState(false)
+  const [fireflies, setFireflies] = useState<Array<{
+    left: string; top: string; size: number;
+    x: string; y: string; d: string; t: string; delay: string;
+  }>>([])
 
+  // Prevent hydration mismatch for theme toggle
   useEffect(() => {
-    const fetchLogo = async () => {
-      const { data } = await supabase
-        .from("settings")
-        .select("business_logo_url, business_name")
-        .single();
-      if (data?.business_logo_url) {
-        setLogoUrl(data.business_logo_url);
-      }
-    };
-    fetchLogo();
-  }, []);
+    setMounted(true)
+  }, [])
+
+  // Generate fireflies on mount (client-side only to avoid hydration mismatch)
+  useEffect(() => {
+    const count = typeof window !== "undefined" && window.innerWidth < 600 ? 16 : 30
+    const flies = Array.from({ length: count }, () => ({
+      left: `${Math.random() * 100}%`,
+      top: `${Math.random() * 100}%`,
+      size: 2 + Math.random() * 3,
+      x: `${Math.random() * 80 - 40}px`,
+      y: `${Math.random() * 80 - 40}px`,
+      d: `${3 + Math.random() * 4}s`,
+      t: `${2 + Math.random() * 3}s`,
+      delay: `${-Math.random() * 8}s`,
+    }))
+    setFireflies(flies)
+  }, [])
 
   const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setLoading(true);
-    setError("");
+    e.preventDefault()
+    setError("")
+    setLoading(true)
 
     try {
-      await signIn(email, password);
-    } catch (err) {
-      setError("Invalid email or password");
+      await signIn(email, password)
+      showToast.success("Welcome back!")
+    } catch (err: any) {
+      const msg = getErrorMessage(err)
+      setError(msg)
+      showToast.error("Sign in failed", msg)
     } finally {
-      setLoading(false);
+      setLoading(false)
     }
-  };
+  }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-orange-50 to-orange-100 dark:from-gray-900 dark:to-black p-4">
-      <div className="absolute top-4 right-4">
-        <ThemeToggle />
+    <div className={`${styles.page} ${isLampOn ? styles.on : ""}`}>
+      {/* Fireflies */}
+      <div className={styles.flies} aria-hidden="true">
+        {fireflies.map((f, i) => (
+          <i
+            key={i}
+            className={styles.fly}
+            style={{
+              left: f.left,
+              top: f.top,
+              width: `${f.size}px`,
+              height: `${f.size}px`,
+              ["--x" as any]: f.x,
+              ["--y" as any]: f.y,
+              ["--d" as any]: f.d,
+              ["--t" as any]: f.t,
+              animationDelay: f.delay,
+            }}
+          />
+        ))}
       </div>
 
-      <Card className="w-full max-w-md">
-        <CardHeader className="text-center">
-          {logoUrl ? (
-            <img
-              src={logoUrl}
-              alt="Business Logo"
-              className="mx-auto mb-4 w-16 h-16 object-contain"
-            />
+      {/* Theme toggle */}
+      {mounted && (
+        <button
+          className={styles.themeToggle}
+          onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
+          aria-label="Toggle theme"
+        >
+          {theme === "dark" ? (
+            <Sun className="h-5 w-5" />
           ) : (
-            <div className="mx-auto mb-4 bg-primary rounded-full p-3 w-16 h-16 flex items-center justify-center">
-              <Printer className="h-8 w-8 text-white" />
-            </div>
+            <Moon className="h-5 w-5" />
           )}
-          <CardTitle className="text-2xl font-bold">
-            BinFazal Enterprises
-          </CardTitle>
-          <CardDescription>Print Management System</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="email">Email</Label>
-              <Input
-                id="email"
+        </button>
+      )}
+
+      <main className={styles.stage}>
+        <div className={styles.wrap}>
+          {/* Lamp */}
+          <Lamp isOn={isLampOn} onToggle={setIsLampOn} />
+
+          {/* Form */}
+          <form
+            className={styles.card}
+            onSubmit={handleSubmit}
+            aria-hidden={!isLampOn}
+          >
+            {/* Business Logo */}
+            <div className={styles.logo}>
+              <Image
+                src="/binfazal-logo.png"
+                alt="BinFazal Enterprises"
+                width={220}
+                height={48}
+                priority
+              />
+            </div>
+
+            <h1>Welcome Back</h1>
+            <p className={styles.sub}>
+              {isLampOn ? "Sign in to continue" : "Pull the string to begin"}
+            </p>
+
+            {/* Email */}
+            <div className={styles.field}>
+              <svg className={styles.ico} viewBox="0 0 24 24">
+                <rect x="2" y="4" width="20" height="16" rx="2" />
+                <path d="m22 7-10 6L2 7" />
+              </svg>
+              <input
                 type="email"
-                placeholder="Enter your email"
+                placeholder="Email Address"
+                autoComplete="email"
+                aria-label="Email address"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 required
+                disabled={!isLampOn || loading}
               />
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="password">Password</Label>
-              <Input
-                id="password"
-                type="password"
-                placeholder="Enter your password"
+
+            {/* Password */}
+            <div className={styles.field}>
+              <svg className={styles.ico} viewBox="0 0 24 24">
+                <rect x="3" y="11" width="18" height="11" rx="2" />
+                <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+              </svg>
+              <input
+                type={showPassword ? "text" : "password"}
+                placeholder="Password"
+                autoComplete="current-password"
+                aria-label="Password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 required
+                disabled={!isLampOn || loading}
               />
+              <button
+                type="button"
+                className={styles.eye}
+                onClick={() => setShowPassword(!showPassword)}
+                aria-label={showPassword ? "Hide password" : "Show password"}
+              >
+                {showPassword ? <EyeOff /> : <Eye />}
+              </button>
             </div>
 
-            {error && (
-              <div className="text-red-500 text-sm text-center">{error}</div>
-            )}
+            {/* Error */}
+            {error && <div className={styles.error}>{error}</div>}
 
-            <Button type="submit" className="w-full" disabled={loading}>
-              {loading ? "Signing in..." : "Sign In"}
-            </Button>
+            {/* Sign In */}
+            <button
+              type="submit"
+              className={`${styles.signin} ${loading ? styles.loading : ""}`}
+              disabled={!isLampOn || loading}
+            >
+              <span className={styles.spin}></span>
+              <span>{loading ? "Signing in…" : "Sign In"}</span>
+            </button>
           </form>
-        </CardContent>
-      </Card>
+        </div>
+      </main>
     </div>
-  );
+  )
 }
