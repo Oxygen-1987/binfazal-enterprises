@@ -14,6 +14,7 @@ interface LedgerEntry {
   date: string;
   type: "job" | "payment" | "opening";
   description: string;
+  paper_qty?: number;
   print_qty?: number;
   rate?: number;
   debit: number;
@@ -40,13 +41,20 @@ interface LedgerViewerProps {
 const A4_WIDTH_PX = 794;
 const A4_HEIGHT_PX = 1123;
 
-// Page layout: TOP padding already correct for your template
+// Page layout constants
 const PAGE_TOP_PADDING = 60;
 const CLIENT_INFO_HEIGHT = 170;
 const BOTTOM_PADDING = 45;
-const FOOTER_RESERVE = 90; // ~2.5 inches ≈ 63mm reserved for template footer
-const ROW_HEIGHT = 24;
-const ROWS_PER_PAGE = 26; // Adjust if footer size changes
+const FOOTER_RESERVE = 120;
+const ROWS_PER_PAGE = 20;
+
+// Helper: format rate (no trailing decimals for whole numbers)
+function formatRate(rate: number | undefined): string {
+  if (!rate) return "-";
+  const num = Number(rate);
+  if (Number.isInteger(num)) return num.toString();
+  return num.toFixed(2);
+}
 
 export function LedgerViewer({
   clientId,
@@ -164,7 +172,7 @@ export function LedgerViewer({
     const ledgerEntries: LedgerEntry[] = [];
     let balance = startingBalance;
 
-    if (balance !== 0) {
+    if (balance !== 0 || fromDate) {
       ledgerEntries.push({
         id: "opening",
         date:
@@ -172,11 +180,9 @@ export function LedgerViewer({
           clientData?.opening_balance_date ||
           clientData?.created_at,
         type: "opening",
-        description: fromDate
-          ? "Opening Balance (Period Start)"
-          : "Opening Balance",
-        debit: balance > 0 ? balance : 0,
-        credit: balance < 0 ? Math.abs(balance) : 0,
+        description: "Opening Balance",
+        debit: 0,
+        credit: 0,
         balance: balance,
       });
     }
@@ -188,6 +194,7 @@ export function LedgerViewer({
         date: job.job_date,
         type: "job",
         description: job.job_details || "Print Job",
+        paper_qty: Number(job.paper_qty) || 0,
         print_qty: Number(job.print_qty) || 0,
         rate: Number(job.rate) || 0,
         debit: Number(job.total_amount),
@@ -203,7 +210,7 @@ export function LedgerViewer({
         date: payment.payment_date,
         type: "payment",
         description: `Payment - ${
-          payment.notes || payment.payment_method || "Received"
+          payment.payment_method?.replace("_", " ") || "Received"
         }`,
         debit: 0,
         credit: Number(payment.amount),
@@ -229,32 +236,20 @@ export function LedgerViewer({
     setLoading(false);
   };
 
-  // ============================================
-  // PAGINATION — computes at render, not in functions
-  // ============================================
   const pages: LedgerEntry[][] = [];
   if (entries.length === 0) {
     pages.push([]);
   } else {
-    // First page might reserve 1 row if opening balance exists
-    const firstPageCapacity = ROWS_PER_PAGE - 1;
-    const subsequentPageCapacity = ROWS_PER_PAGE;
-
     let i = 0;
-    let pageIndex = 0;
     while (i < entries.length) {
-      const capacity =
-        pageIndex === 0 ? firstPageCapacity : subsequentPageCapacity;
-      pages.push(entries.slice(i, i + capacity));
-      i += capacity;
-      pageIndex++;
+      pages.push(entries.slice(i, i + ROWS_PER_PAGE));
+      i += ROWS_PER_PAGE;
     }
   }
   const pageCount = pages.length;
 
-  // Compute carry-forward balance for non-last pages
   const getPageCarryForward = (pageIdx: number) => {
-    if (pageIdx >= pages.length - 1) return null; // last page
+    if (pageIdx >= pages.length - 1) return null;
     const lastEntry = pages[pageIdx][pages[pageIdx].length - 1];
     return lastEntry?.balance || 0;
   };
@@ -301,7 +296,6 @@ export function LedgerViewer({
     }
   };
 
-  // Multi-page PDF: splits canvas into A4 pages
   const generatePDFBlob = async (canvas: HTMLCanvasElement): Promise<Blob> => {
     const { jsPDF } = await import("jspdf");
 
@@ -314,7 +308,6 @@ export function LedgerViewer({
     const pdfWidth = pdf.internal.pageSize.getWidth();
     const pdfHeight = pdf.internal.pageSize.getHeight();
 
-    // Slice canvas into pages
     for (let page = 0; page < pageCount; page++) {
       if (page > 0) pdf.addPage();
 
@@ -326,16 +319,15 @@ export function LedgerViewer({
       if (ctx) {
         ctx.fillStyle = "#ffffff";
         ctx.fillRect(0, 0, pageCanvas.width, pageCanvas.height);
-        // Source y-offset in the tall canvas
         const sy = page * A4_HEIGHT_PX * 2;
         ctx.drawImage(
           canvas,
           0,
-          sy, // source x, y
+          sy,
           A4_WIDTH_PX * 2,
-          A4_HEIGHT_PX * 2, // source w, h
+          A4_HEIGHT_PX * 2,
           0,
-          0, // dest x, y
+          0,
           pageCanvas.width,
           pageCanvas.height,
         );
@@ -432,6 +424,50 @@ export function LedgerViewer({
 
   const hasTemplate = !!businessInfo?.ledger_template_url;
 
+  // html2canvas ignores vertical-align/height on table cells and draws text a
+  // few px low, so we position text with explicit padding (bottom > top).
+  // To lift header text: raise HEADER_PAD_BOTTOM and lower HEADER_PAD_TOP by the
+  // same amount (keep the sum constant so the row height doesn't change).
+  const HEADER_PAD_TOP = 4;
+  const HEADER_PAD_BOTTOM = 10;
+  const ROW_PAD_TOP = 4;
+  const ROW_PAD_BOTTOM = 9;
+
+  const pdfHeaderBase: React.CSSProperties = {
+    backgroundColor: "#1e3a8a",
+    color: "#fff",
+    textAlign: "center",
+    verticalAlign: "top",
+    padding: `${HEADER_PAD_TOP}px 6px ${HEADER_PAD_BOTTOM}px 6px`,
+    fontWeight: 700,
+    fontSize: "10.5px",
+    letterSpacing: "0.4px",
+    textTransform: "uppercase",
+    lineHeight: "12px",
+    borderRight: "1px solid rgba(255,255,255,0.18)",
+  };
+
+  const cellBase: React.CSSProperties = {
+    padding: `${ROW_PAD_TOP}px 8px ${ROW_PAD_BOTTOM}px 8px`,
+    verticalAlign: "top",
+    lineHeight: "13px",
+    fontSize: "12px",
+    borderBottom: "1px solid #e5e7eb",
+    borderRight: "1px solid #f1f2f4",
+  };
+  const numCell: React.CSSProperties = {
+    ...cellBase,
+    textAlign: "right",
+    fontVariantNumeric: "tabular-nums",
+  };
+
+  const totalDebit = entries
+    .filter((e) => e.type === "job")
+    .reduce((s, e) => s + e.debit, 0);
+  const totalCredit = entries
+    .filter((e) => e.type === "payment")
+    .reduce((s, e) => s + e.credit, 0);
+
   return (
     <div className="space-y-6">
       {/* Summary Cards */}
@@ -443,7 +479,7 @@ export function LedgerViewer({
             </p>
             <p className="text-xl font-bold">
               {formatCurrency(
-                entries.find((e) => e.type === "opening")?.debit || 0,
+                entries.find((e) => e.type === "opening")?.balance || 0,
               )}
             </p>
           </CardContent>
@@ -452,11 +488,7 @@ export function LedgerViewer({
           <CardContent className="p-4">
             <p className="text-sm text-gray-500">Total Debit (Jobs)</p>
             <p className="text-xl font-bold text-red-600">
-              {formatCurrency(
-                entries
-                  .filter((e) => e.type === "job")
-                  .reduce((sum, e) => sum + e.debit, 0),
-              )}
+              {formatCurrency(totalDebit)}
             </p>
           </CardContent>
         </Card>
@@ -464,11 +496,7 @@ export function LedgerViewer({
           <CardContent className="p-4">
             <p className="text-sm text-gray-500">Total Credit (Payments)</p>
             <p className="text-xl font-bold text-green-600">
-              {formatCurrency(
-                entries
-                  .filter((e) => e.type === "payment")
-                  .reduce((sum, e) => sum + e.credit, 0),
-              )}
+              {formatCurrency(totalCredit)}
             </p>
           </CardContent>
         </Card>
@@ -530,7 +558,7 @@ export function LedgerViewer({
         </div>
       )}
 
-      {/* Screen View */}
+      {/* Screen View — simple table, unchanged */}
       <Card>
         <CardContent className="p-4 overflow-x-auto">
           <table className="w-full text-sm">
@@ -538,7 +566,8 @@ export function LedgerViewer({
               <tr className="border-b dark:border-gray-700">
                 <th className="text-left py-2 px-2">Date</th>
                 <th className="text-left py-2 px-2">Description</th>
-                <th className="text-right py-2 px-2">Qty</th>
+                <th className="text-right py-2 px-2">Paper Qty</th>
+                <th className="text-right py-2 px-2">Print Qty</th>
                 <th className="text-right py-2 px-2">Rate</th>
                 <th className="text-right py-2 px-2">Debit</th>
                 <th className="text-right py-2 px-2">Credit</th>
@@ -546,51 +575,57 @@ export function LedgerViewer({
               </tr>
             </thead>
             <tbody>
-              {entries.map((entry) => (
-                <tr
-                  key={entry.id}
-                  className="border-b dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800"
-                >
-                  <td className="py-2 px-2 whitespace-nowrap">
-                    {formatDate(entry.date)}
-                  </td>
-                  <td className="py-2 px-2">
-                    <div className="flex items-center">
-                      {entry.type === "job" && (
-                        <span className="inline-block w-2 h-2 bg-red-500 rounded-full mr-2"></span>
-                      )}
-                      {entry.type === "payment" && (
-                        <span className="inline-block w-2 h-2 bg-green-500 rounded-full mr-2"></span>
-                      )}
-                      {entry.type === "opening" && (
-                        <span className="inline-block w-2 h-2 bg-blue-500 rounded-full mr-2"></span>
-                      )}
+              {entries.map((entry) => {
+                const isPayment = entry.type === "payment";
+                const isOpening = entry.type === "opening";
+                return (
+                  <tr
+                    key={entry.id}
+                    className={`border-b dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800 ${
+                      isOpening ? "bg-blue-50/50 dark:bg-blue-900/10" : ""
+                    }`}
+                  >
+                    <td className="py-2 px-2 whitespace-nowrap">
+                      {formatDate(entry.date)}
+                    </td>
+                    <td
+                      className={`py-2 px-2 ${
+                        isPayment ? "text-green-600" : ""
+                      }`}
+                    >
                       {entry.description}
-                    </div>
-                  </td>
-                  <td className="text-right py-2 px-2">
-                    {entry.print_qty ? entry.print_qty.toLocaleString() : "-"}
-                  </td>
-                  <td className="text-right py-2 px-2">
-                    {entry.rate ? entry.rate.toFixed(4) : "-"}
-                  </td>
-                  <td className="text-right py-2 px-2 text-red-600">
-                    {entry.debit > 0 ? formatCurrency(entry.debit) : "-"}
-                  </td>
-                  <td className="text-right py-2 px-2 text-green-600">
-                    {entry.credit > 0 ? formatCurrency(entry.credit) : "-"}
-                  </td>
-                  <td className="text-right py-2 px-2 font-medium">
-                    {formatCurrency(entry.balance)}
-                  </td>
-                </tr>
-              ))}
+                    </td>
+                    <td className="text-right py-2 px-2">
+                      {entry.paper_qty ? entry.paper_qty.toLocaleString() : "-"}
+                    </td>
+                    <td className="text-right py-2 px-2">
+                      {entry.print_qty ? entry.print_qty.toLocaleString() : "-"}
+                    </td>
+                    <td className="text-right py-2 px-2">
+                      {formatRate(entry.rate)}
+                    </td>
+                    <td className="text-right py-2 px-2 text-red-600">
+                      {entry.debit > 0 ? formatCurrency(entry.debit) : "-"}
+                    </td>
+                    <td className="text-right py-2 px-2 text-green-600">
+                      {entry.credit > 0 ? formatCurrency(entry.credit) : "-"}
+                    </td>
+                    <td
+                      className={`text-right py-2 px-2 font-medium ${
+                        entry.balance < 0 ? "text-green-600" : ""
+                      }`}
+                    >
+                      {formatCurrency(entry.balance)}
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </CardContent>
       </Card>
 
-      {/* ========== HIDDEN MULTI-PAGE TEMPLATE ========== */}
+      {/* Hidden A4 Template — PDF/JPG */}
       {hasTemplate && (
         <div
           ref={ledgerRef}
@@ -611,7 +646,6 @@ export function LedgerViewer({
                 boxSizing: "border-box",
               }}
             >
-              {/* Template image background */}
               <img
                 src={templateBase64 || businessInfo?.ledger_template_url}
                 alt=""
@@ -627,7 +661,6 @@ export function LedgerViewer({
                 }}
               />
 
-              {/* Content overlay */}
               <div
                 style={{
                   position: "relative",
@@ -640,11 +673,10 @@ export function LedgerViewer({
                   flexDirection: "column",
                 }}
               >
-                {/* Client Info */}
                 <div
                   style={{
                     marginTop: `${CLIENT_INFO_HEIGHT}px`,
-                    marginBottom: "15px",
+                    marginBottom: "10px",
                     fontSize: "12px",
                     color: "#000",
                   }}
@@ -652,14 +684,31 @@ export function LedgerViewer({
                   <div
                     style={{ display: "flex", justifyContent: "space-between" }}
                   >
-                    <div style={{ width: "55%" }}>
-                      <p style={{ margin: "3px 0" }}>
-                        <strong>Client:</strong>{" "}
+                    <div style={{ width: "60%" }}>
+                      <p
+                        style={{
+                          margin: "3px 0",
+                          fontWeight: "bold",
+                          fontSize: "13px",
+                        }}
+                      >
+                        Client:{" "}
                         {client?.company_name ||
                           `${client?.first_name} ${client?.last_name}`}
                       </p>
-                      <p style={{ margin: "3px 0" }}>
-                        <strong>Mobile:</strong> {client?.mobile_number || "-"}
+                      <p
+                        style={{
+                          margin: "3px 0",
+                          fontSize: "12px",
+                          color: "#333",
+                        }}
+                      >
+                        Period:{" "}
+                        {statementPeriod.from
+                          ? `${formatDate(
+                              statementPeriod.from,
+                            )} to ${formatDate(statementPeriod.to)}`
+                          : "-"}
                       </p>
                       {pageIndex > 0 && (
                         <p
@@ -667,114 +716,79 @@ export function LedgerViewer({
                             margin: "3px 0",
                             fontStyle: "italic",
                             color: "#666",
+                            fontSize: "10px",
                           }}
                         >
                           (Continued from previous page)
                         </p>
                       )}
                     </div>
-                    <div style={{ width: "45%", textAlign: "right" }}>
-                      <p style={{ margin: "3px 0" }}>
-                        <strong>Statement Period:</strong>{" "}
-                        {statementPeriod.from
-                          ? `${formatDate(
-                              statementPeriod.from,
-                            )} to ${formatDate(statementPeriod.to)}`
-                          : "-"}
+                    <div style={{ width: "40%", textAlign: "right" }}>
+                      <p
+                        style={{
+                          margin: "3px 0",
+                          fontSize: "12px",
+                          color: "#555",
+                        }}
+                      >
+                        Generated: {formatDate(new Date())}{" "}
+                        {new Date().toLocaleTimeString("en-GB", {
+                          hour: "2-digit",
+                          minute: "2-digit",
+                        })}
                       </p>
-                      <p style={{ margin: "3px 0" }}>
-                        <strong>Page:</strong> {pageIndex + 1} of {pageCount}
-                      </p>
-                      <p style={{ margin: "3px 0" }}>
-                        <strong>Date:</strong> {formatDate(new Date())}
+                      <p
+                        style={{
+                          margin: "3px 0",
+                          fontSize: "12px",
+                          color: "#555",
+                        }}
+                      >
+                        Page: {pageIndex + 1} of {pageCount}
                       </p>
                     </div>
                   </div>
                 </div>
 
-                {/* Ledger Table */}
+                {/* PDF Table */}
                 <table
                   style={{
                     width: "100%",
-                    borderCollapse: "collapse",
-                    fontSize: "10px",
-                    color: "#000",
-                    flexGrow: 0,
+                    borderCollapse: "separate",
+                    borderSpacing: 0,
+                    fontSize: "12px",
+                    color: "#111",
+                    border: "1px solid #d1d5db",
+                    borderRadius: "8px",
+                    overflow: "hidden",
                   }}
                 >
                   <thead>
-                    <tr
-                      style={{
-                        borderTop: "2px solid #000",
-                        borderBottom: "2px solid #000",
-                      }}
-                    >
+                    <tr>
+                      <th style={{ ...pdfHeaderBase, width: "12%" }}>Date</th>
                       <th
                         style={{
+                          ...pdfHeaderBase,
+                          width: "28%",
                           textAlign: "left",
-                          padding: "5px 3px",
-                          fontWeight: "bold",
-                          width: "13%",
-                        }}
-                      >
-                        Date
-                      </th>
-                      <th
-                        style={{
-                          textAlign: "left",
-                          padding: "5px 3px",
-                          fontWeight: "bold",
-                          width: "32%",
                         }}
                       >
                         Description
                       </th>
-                      <th
-                        style={{
-                          textAlign: "right",
-                          padding: "5px 3px",
-                          fontWeight: "bold",
-                          width: "10%",
-                        }}
-                      >
-                        Qty
+                      <th style={{ ...pdfHeaderBase, width: "9%" }}>
+                        Paper Qty
                       </th>
-                      <th
-                        style={{
-                          textAlign: "right",
-                          padding: "5px 3px",
-                          fontWeight: "bold",
-                          width: "10%",
-                        }}
-                      >
-                        Rate
+                      <th style={{ ...pdfHeaderBase, width: "9%" }}>
+                        Print Qty
                       </th>
+                      <th style={{ ...pdfHeaderBase, width: "8%" }}>Rate</th>
+                      <th style={{ ...pdfHeaderBase, width: "11%" }}>Debit</th>
+                      <th style={{ ...pdfHeaderBase, width: "11%" }}>Credit</th>
                       <th
                         style={{
-                          textAlign: "right",
-                          padding: "5px 3px",
-                          fontWeight: "bold",
+                          ...pdfHeaderBase,
                           width: "12%",
-                        }}
-                      >
-                        Debit
-                      </th>
-                      <th
-                        style={{
-                          textAlign: "right",
-                          padding: "5px 3px",
-                          fontWeight: "bold",
-                          width: "11%",
-                        }}
-                      >
-                        Credit
-                      </th>
-                      <th
-                        style={{
-                          textAlign: "right",
-                          padding: "5px 3px",
-                          fontWeight: "bold",
-                          width: "12%",
+                          borderRight: "none",
                         }}
                       >
                         Balance
@@ -782,90 +796,189 @@ export function LedgerViewer({
                     </tr>
                   </thead>
                   <tbody>
-                    {pageEntries.map((entry) => (
-                      <tr
-                        key={entry.id}
-                        style={{
-                          borderBottom: "1px solid #ccc",
-                          height: `${ROW_HEIGHT}px`,
-                        }}
-                      >
-                        <td
-                          style={{ padding: "4px 3px", whiteSpace: "nowrap" }}
-                        >
-                          {formatDate(entry.date)}
-                        </td>
-                        <td style={{ padding: "4px 3px" }}>
-                          {entry.description}
-                        </td>
-                        <td style={{ textAlign: "right", padding: "4px 3px" }}>
-                          {entry.print_qty
-                            ? entry.print_qty.toLocaleString()
-                            : ""}
-                        </td>
-                        <td style={{ textAlign: "right", padding: "4px 3px" }}>
-                          {entry.rate ? entry.rate.toFixed(4) : ""}
-                        </td>
-                        <td style={{ textAlign: "right", padding: "4px 3px" }}>
-                          {entry.debit > 0 ? formatCurrency(entry.debit) : ""}
-                        </td>
-                        <td style={{ textAlign: "right", padding: "4px 3px" }}>
-                          {entry.credit > 0 ? formatCurrency(entry.credit) : ""}
-                        </td>
-                        <td
-                          style={{
-                            textAlign: "right",
-                            padding: "4px 3px",
-                            fontWeight: 500,
-                          }}
-                        >
-                          {formatCurrency(entry.balance)}
-                        </td>
-                      </tr>
-                    ))}
+                    {pageEntries.map((entry, idx) => {
+                      const isPayment = entry.type === "payment";
+                      const isOpening = entry.type === "opening";
+                      const rowBg = isOpening
+                        ? "#eef2ff"
+                        : idx % 2 === 0
+                        ? "#ffffff"
+                        : "#f8fafc";
+
+                      return (
+                        <tr key={entry.id} style={{ backgroundColor: rowBg }}>
+                          <td
+                            style={{
+                              ...cellBase,
+                              whiteSpace: "nowrap",
+                              textAlign: "center",
+                            }}
+                          >
+                            {formatDate(entry.date)}
+                          </td>
+                          <td
+                            style={{
+                              ...cellBase,
+                              textAlign: "left",
+                              color: isPayment ? "#15803d" : "#111",
+                              fontWeight: isPayment || isOpening ? 600 : 400,
+                            }}
+                          >
+                            {entry.description}
+                          </td>
+                          <td style={numCell}>
+                            {entry.paper_qty
+                              ? entry.paper_qty.toLocaleString()
+                              : "-"}
+                          </td>
+                          <td style={numCell}>
+                            {entry.print_qty
+                              ? entry.print_qty.toLocaleString()
+                              : "-"}
+                          </td>
+                          <td style={numCell}>{formatRate(entry.rate)}</td>
+                          <td style={numCell}>
+                            {entry.debit > 0
+                              ? entry.debit.toLocaleString()
+                              : "-"}
+                          </td>
+                          <td style={{ ...numCell, color: "#15803d" }}>
+                            {entry.credit > 0
+                              ? entry.credit.toLocaleString()
+                              : "-"}
+                          </td>
+                          <td
+                            style={{
+                              ...numCell,
+                              borderRight: "none",
+                              fontWeight: 700,
+                              color: entry.balance < 0 ? "#15803d" : "#111",
+                            }}
+                          >
+                            {entry.balance.toLocaleString()}
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                   <tfoot>
                     {pageIndex < pageCount - 1 ? (
-                      // Non-last page: Balance Carried Forward
-                      <tr
-                        style={{
-                          borderTop: "2px solid #000",
-                          fontWeight: "bold",
-                        }}
-                      >
+                      <tr style={{ backgroundColor: "#eef2ff" }}>
                         <td
-                          colSpan={6}
-                          style={{ padding: "8px 3px", textAlign: "right" }}
+                          colSpan={7}
+                          style={{
+                            ...cellBase,
+                            padding: "6px 8px 12px 8px",
+                            lineHeight: "14px",
+                            textAlign: "right",
+                            fontWeight: 700,
+                            color: "#1e3a8a",
+                            borderTop: "2px solid #1e3a8a",
+                            borderBottom: "none",
+                          }}
                         >
-                          Balance Carried Forward:
+                          Balance Carried Forward
                         </td>
-                        <td style={{ padding: "8px 3px", textAlign: "right" }}>
-                          {formatCurrency(getPageCarryForward(pageIndex) || 0)}
+                        <td
+                          style={{
+                            ...numCell,
+                            padding: "6px 8px 12px 8px",
+                            lineHeight: "14px",
+                            fontWeight: 700,
+                            color: "#1e3a8a",
+                            borderTop: "2px solid #1e3a8a",
+                            borderBottom: "none",
+                            borderRight: "none",
+                          }}
+                        >
+                          Rs.{" "}
+                          {(
+                            getPageCarryForward(pageIndex) || 0
+                          ).toLocaleString()}
                         </td>
                       </tr>
                     ) : (
-                      // Last page: Closing Balance
-                      <tr
-                        style={{
-                          borderTop: "2px solid #000",
-                          fontWeight: "bold",
-                        }}
-                      >
-                        <td
-                          colSpan={6}
-                          style={{ padding: "8px 3px", textAlign: "right" }}
-                        >
-                          Closing Balance:
-                        </td>
-                        <td style={{ padding: "8px 3px", textAlign: "right" }}>
-                          {formatCurrency(runningBalance)}
-                        </td>
-                      </tr>
+                      <>
+                        <tr style={{ backgroundColor: "#f1f5f9" }}>
+                          <td
+                            colSpan={5}
+                            style={{
+                              ...cellBase,
+                              textAlign: "right",
+                              fontWeight: 700,
+                              borderTop: "2px solid #1e3a8a",
+                            }}
+                          >
+                            Totals
+                          </td>
+                          <td
+                            style={{
+                              ...numCell,
+                              fontWeight: 700,
+                              borderTop: "2px solid #1e3a8a",
+                            }}
+                          >
+                            {totalDebit.toLocaleString()}
+                          </td>
+                          <td
+                            style={{
+                              ...numCell,
+                              fontWeight: 700,
+                              color: "#15803d",
+                              borderTop: "2px solid #1e3a8a",
+                            }}
+                          >
+                            {totalCredit.toLocaleString()}
+                          </td>
+                          <td
+                            style={{
+                              ...cellBase,
+                              borderTop: "2px solid #1e3a8a",
+                              borderRight: "none",
+                            }}
+                          />
+                        </tr>
+                        <tr style={{ backgroundColor: "#04b0ff52" }}>
+                          <td
+                            colSpan={8}
+                            style={{
+                              ...cellBase,
+                              padding: "7px 12px 13px 8px",
+                              lineHeight: "20px",
+                              textAlign: "right",
+                              fontSize: "15px",
+                              fontWeight: 700,
+                              color: "#d10000",
+                              whiteSpace: "nowrap",
+                              borderBottom: "none",
+                              borderRight: "none",
+                            }}
+                          >
+                            <span style={{ letterSpacing: "0.5px" }}>
+                              OUTSTANDING BALANCE
+                            </span>
+                            <span style={{ marginLeft: "18px" }}>
+                              Rs. {runningBalance.toLocaleString()}
+                            </span>
+                          </td>
+                        </tr>
+                      </>
                     )}
                   </tfoot>
                 </table>
 
-                {/* Spacer to reserve footer area — pushes content up so footer text isn't covered */}
+                <div
+                  style={{
+                    marginTop: "20px",
+                    textAlign: "center",
+                    fontSize: "10px",
+                    color: "#666",
+                    fontStyle: "italic",
+                  }}
+                >
+                  Computer generated statement - For official use only
+                </div>
+
                 <div style={{ height: `${FOOTER_RESERVE}px`, flexShrink: 0 }} />
               </div>
             </div>
@@ -887,7 +1000,6 @@ export function LedgerViewer({
   );
 }
 
-// Helper to convert image URL to base64
 async function imageUrlToBase64(url: string): Promise<string> {
   if (url.startsWith("data:")) return url;
   try {
