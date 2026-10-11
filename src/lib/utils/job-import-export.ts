@@ -43,44 +43,42 @@ const DATE_FORMAT_REGEX = /^(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{2,4})$/
 export function parseFlexibleDate(input: string | Date | number): string | null {
   if (!input && input !== 0) return null
 
-  // If it's a Date object (Excel auto-converts sometimes)
+  // Handle Date objects from exceljs — use LOCAL date components
   if (input instanceof Date) {
     if (isNaN(input.getTime())) return null
-    const y = input.getUTCFullYear()
-    const m = String(input.getUTCMonth() + 1).padStart(2, '0')
-    const d = String(input.getUTCDate()).padStart(2, '0')
+    const y = input.getFullYear()
+    const m = String(input.getMonth() + 1).padStart(2, '0')
+    const d = String(input.getDate()).padStart(2, '0')
     return `${y}-${m}-${d}`
   }
 
   const str = String(input).trim()
   if (!str) return null
 
-  // Already ISO: YYYY-MM-DD
+  // Format: YYYY-MM-DD or YYYY-MM-DD HH:MM:SS
   if (/^\d{4}-\d{2}-\d{2}/.test(str)) {
     return str.substring(0, 10)
   }
 
-  // Try DD/MM/YYYY or similar
+  // Format: DD/MM/YYYY or DD-MM-YYYY or DD.MM.YYYY
   const match = str.match(DATE_FORMAT_REGEX)
   if (match) {
-    const a = parseInt(match[1])
-    const b = parseInt(match[2])
-    let year = parseInt(match[3])
+    const a = parseInt(match[1], 10)
+    const b = parseInt(match[2], 10)
+    let year = parseInt(match[3], 10)
     if (year < 100) year = 2000 + year
 
     let day: number
     let month: number
 
     if (a > 12 && b <= 12) {
-      // a must be day: DD/MM
       day = a
       month = b
     } else if (b > 12 && a <= 12) {
-      // b must be day: it's MM/DD format (unusual), swap
       day = b
       month = a
     } else {
-      // Both <= 12: assume Pakistani DD/MM
+      // Both ≤ 12: assume Pakistani DD/MM/YYYY
       day = a
       month = b
     }
@@ -88,9 +86,12 @@ export function parseFlexibleDate(input: string | Date | number): string | null 
     if (month < 1 || month > 12) return null
     if (day < 1 || day > 31) return null
 
-    // Validate real date
     const testDate = new Date(year, month - 1, day)
-    if (testDate.getFullYear() !== year || testDate.getMonth() !== month - 1 || testDate.getDate() !== day) {
+    if (
+      testDate.getFullYear() !== year ||
+      testDate.getMonth() !== month - 1 ||
+      testDate.getDate() !== day
+    ) {
       return null
     }
 
@@ -99,11 +100,14 @@ export function parseFlexibleDate(input: string | Date | number): string | null 
 
   // Excel serial number
   if (/^\d+$/.test(str)) {
-    const serial = parseInt(str)
+    const serial = parseInt(str, 10)
     if (serial > 20000 && serial < 60000) {
-      const excelEpoch = new Date(Date.UTC(1899, 11, 30))
+      const excelEpoch = new Date(1899, 11, 30)
       const date = new Date(excelEpoch.getTime() + serial * 86400000)
-      return date.toISOString().split('T')[0]
+      const y = date.getFullYear()
+      const m = String(date.getMonth() + 1).padStart(2, '0')
+      const d = String(date.getDate()).padStart(2, '0')
+      return `${y}-${m}-${d}`
     }
   }
 

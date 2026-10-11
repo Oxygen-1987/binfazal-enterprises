@@ -109,6 +109,19 @@ export function DateRangeFilter({
   );
 }
 
+/**
+ * Format a date in LOCAL time as YYYY-MM-DD.
+ * CRITICAL: Do NOT use toISOString() here — it converts to UTC,
+ * which shifts the date by one day for timezones ahead of UTC
+ * (e.g., Pakistan UTC+5: 2026-10-01 00:00 PKT → 2026-09-30 19:00 UTC).
+ */
+function formatLocalDate(date: Date): string {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, "0");
+  const d = String(date.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
+
 // Helper function to get date range from filter type
 export function getDateRange(
   filter: DateFilterType,
@@ -124,40 +137,40 @@ export function getDateRange(
       const from = new Date(year, month, 1);
       const to = new Date(year, month + 1, 0);
       return {
-        from: from.toISOString().split("T")[0],
-        to: to.toISOString().split("T")[0],
+        from: formatLocalDate(from),
+        to: formatLocalDate(to),
       };
     }
     case "last_month": {
       const from = new Date(year, month - 1, 1);
       const to = new Date(year, month, 0);
       return {
-        from: from.toISOString().split("T")[0],
-        to: to.toISOString().split("T")[0],
+        from: formatLocalDate(from),
+        to: formatLocalDate(to),
       };
     }
     case "last_3_months": {
       const from = new Date(year, month - 3, 1);
       const to = new Date(year, month + 1, 0);
       return {
-        from: from.toISOString().split("T")[0],
-        to: to.toISOString().split("T")[0],
+        from: formatLocalDate(from),
+        to: formatLocalDate(to),
       };
     }
     case "last_6_months": {
       const from = new Date(year, month - 6, 1);
       const to = new Date(year, month + 1, 0);
       return {
-        from: from.toISOString().split("T")[0],
-        to: to.toISOString().split("T")[0],
+        from: formatLocalDate(from),
+        to: formatLocalDate(to),
       };
     }
     case "current_year": {
       const from = new Date(year, 0, 1);
       const to = new Date(year, 11, 31);
       return {
-        from: from.toISOString().split("T")[0],
-        to: to.toISOString().split("T")[0],
+        from: formatLocalDate(from),
+        to: formatLocalDate(to),
       };
     }
     case "custom": {
